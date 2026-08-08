@@ -1,0 +1,334 @@
+<script setup>
+import { computed } from 'vue'
+
+const props = defineProps({
+  modelValue: {
+    type: Boolean,
+    default: false,
+  },
+  category: {
+    type: Object,
+    default: null,
+  },
+  isDeleting: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+const emit = defineEmits(['update:modelValue', 'confirm'])
+
+const hasLinkedPurchases = computed(() => {
+  return Number(props.category?.purchaseCount || 0) > 0
+})
+
+function closeModal() {
+  if (props.isDeleting) {
+    return
+  }
+
+  emit('update:modelValue', false)
+}
+
+function confirmDelete() {
+  if (!props.category || props.isDeleting || hasLinkedPurchases.value) {
+    return
+  }
+
+  emit('confirm', props.category)
+}
+</script>
+
+<template>
+  <div
+    v-if="modelValue && category"
+    class="modal-overlay"
+    @click.self="closeModal"
+  >
+    <section
+      class="modal-card delete-modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-category-title"
+      aria-describedby="delete-category-description"
+    >
+      <div class="modal-header">
+        <div class="delete-modal-heading">
+          <span
+            class="delete-icon"
+            :class="{ 'delete-icon--warning': hasLinkedPurchases }"
+            aria-hidden="true"
+          >
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .6 10.05a1.5 1.5 0 0 0 1.5 1.41h4.8a1.5 1.5 0 0 0 1.5-1.41l.6-10.05m-5.25 3v5.25m3-5.25v5.25"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+
+          <div>
+            <p class="eyebrow">
+              {{ hasLinkedPurchases ? 'Suppression impossible' : 'Suppression' }}
+            </p>
+            <h2 id="delete-category-title">
+              {{
+                hasLinkedPurchases
+                  ? 'Impossible de supprimer cette catégorie'
+                  : 'Supprimer cette catégorie ?'
+              }}
+            </h2>
+          </div>
+        </div>
+      </div>
+
+      <p id="delete-category-description" class="delete-modal-text">
+        <template v-if="hasLinkedPurchases">
+          Vous ne pouvez pas supprimer la catégorie
+          <strong>{{ category.name }}</strong>
+          car au moins un achat y est associé.
+        </template>
+
+        <template v-else>
+          Tu es sur le point de supprimer la catégorie
+          <strong>{{ category.name }}</strong>.
+          Cette action est irréversible.
+        </template>
+      </p>
+
+      <p
+        class="delete-modal-note"
+        :class="{ 'delete-modal-note--warning': hasLinkedPurchases }"
+      >
+        <template v-if="hasLinkedPurchases">
+          Pour supprimer cette catégorie, commencez par modifier ou supprimer les
+          achats qui l’utilisent.
+        </template>
+
+        <template v-else>
+          Vérifie qu’aucun achat important n’est encore lié à cette catégorie
+          avant de confirmer.
+        </template>
+      </p>
+
+      <div class="modal-actions">
+        <button
+          class="ghost-btn"
+          type="button"
+          :disabled="isDeleting"
+          @click="closeModal"
+        >
+          {{ hasLinkedPurchases ? 'Fermer' : 'Annuler' }}
+        </button>
+
+        <button
+          v-if="!hasLinkedPurchases"
+          class="danger-btn"
+          type="button"
+          :disabled="isDeleting"
+          @click="confirmDelete"
+        >
+          {{ isDeleting ? 'Suppression...' : 'Supprimer la catégorie' }}
+        </button>
+      </div>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--modal-overlay);
+  backdrop-filter: blur(6px);
+  animation: overlay-fade-in 160ms ease;
+}
+
+.modal-card {
+  width: min(100%, 460px);
+  border-radius: 24px;
+  padding: 1.35rem;
+  background: var(--modal-bg);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+}
+
+.delete-modal-card {
+  animation: modal-pop-in 180ms ease;
+  transform-origin: center;
+}
+
+.modal-header {
+  margin-bottom: 0.4rem;
+}
+
+.delete-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.delete-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.delete-icon--warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.delete-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.eyebrow {
+  color: var(--text-dim, #8a939d);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+}
+
+.modal-header h2 {
+  margin-top: 0.35rem;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  color: var(--text, #eef1f3);
+}
+
+.delete-modal-text {
+  margin: 1rem 0 0.75rem;
+  line-height: 1.6;
+  color: var(--text-soft, #b3bbc4);
+}
+
+.delete-modal-text strong {
+  color: var(--text, #eef1f3);
+}
+
+.delete-modal-note {
+  margin: 0 0 1.5rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.05);
+  color: var(--text-dim, #8a939d);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.delete-modal-note--warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #f7d08a;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.ghost-btn,
+.danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 170px;
+  border: none;
+  border-radius: 14px;
+  padding: 0.9rem 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.ghost-btn {
+  background: rgba(var(--tint-rgb), 0.06);
+  color: var(--text);
+}
+
+.danger-btn {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.ghost-btn:hover:not(:disabled),
+.danger-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.ghost-btn:disabled,
+.danger-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-card {
+    padding: 1.1rem;
+    border-radius: 20px;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ghost-btn,
+  .danger-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .delete-modal-card,
+  .ghost-btn,
+  .danger-btn {
+    animation: none;
+    transition: none;
+  }
+}
+</style>

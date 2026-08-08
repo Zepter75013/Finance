@@ -1,0 +1,2 @@
+ALTER TABLE users
+  ADD COLUMN avatar_url MEDIUMTEXT NULL AFTER last_name;
