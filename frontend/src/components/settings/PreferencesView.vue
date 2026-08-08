@@ -15,6 +15,7 @@ import {
   updateBackupSettings,
   pickBackupDirectory,
 } from '../../services/backups'
+import { fetchDatabaseSettings, updateDatabaseSettings } from '../../services/settings'
 
 const themeStore = useThemeStore()
 const { theme } = storeToRefs(themeStore)
@@ -161,6 +162,10 @@ function requestRestore(backup) {
   isRestoreModalOpen.value = true
 }
 
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
 function handleFileChange(event) {
   const file = event.target.files?.[0]
   if (!file) return
@@ -216,9 +221,52 @@ async function handleDelete(backup) {
   }
 }
 
+const dbSettings = ref(null)
+const isLoadingDbSettings = ref(false)
+const isSavingDbDriver = ref(false)
+const dbSettingsError = ref('')
+const dbSettingsSuccess = ref('')
+
+async function loadDatabaseSettings() {
+  isLoadingDbSettings.value = true
+  dbSettingsError.value = ''
+
+  try {
+    dbSettings.value = await fetchDatabaseSettings()
+  } catch (err) {
+    dbSettingsError.value =
+      err instanceof Error ? err.message : 'Impossible de charger le réglage de base de données.'
+  } finally {
+    isLoadingDbSettings.value = false
+  }
+}
+
+async function selectDatabaseDriver(driver) {
+  if (isSavingDbDriver.value || dbSettings.value?.configured_driver === driver) return
+
+  isSavingDbDriver.value = true
+  dbSettingsError.value = ''
+  dbSettingsSuccess.value = ''
+
+  try {
+    dbSettings.value = await updateDatabaseSettings(driver)
+    dbSettingsSuccess.value = 'Réglage enregistré.'
+  } catch (err) {
+    dbSettingsError.value =
+      err instanceof Error ? err.message : 'Impossible de changer le réglage de base de données.'
+  } finally {
+    isSavingDbDriver.value = false
+  }
+}
+
+function driverLabel(driver) {
+  return driver === 'sqlite' ? 'SQLite (locale)' : 'MySQL'
+}
+
 onMounted(() => {
   loadBackupSettings()
   loadBackups()
+  loadDatabaseSettings()
 })
 </script>
 
@@ -250,6 +298,52 @@ onMounted(() => {
           <span class="theme-option-emoji" aria-hidden="true">{{ option.emoji }}</span>
           <span class="theme-option-label">{{ option.label }}</span>
           <span class="theme-option-description">{{ option.description }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="panel preferences-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Stockage</p>
+          <h2>Base de données</h2>
+        </div>
+      </div>
+
+      <p v-if="dbSettingsError" class="form-error">{{ dbSettingsError }}</p>
+      <p v-if="dbSettingsSuccess" class="form-success">{{ dbSettingsSuccess }}</p>
+
+      <p v-if="dbSettings?.restart_required" class="db-restart-warning">
+        Réglage enregistré pour « {{ driverLabel(dbSettings.configured_driver) }} », mais ce serveur tourne
+        encore avec « {{ driverLabel(dbSettings.active_driver) }} » — redémarre le backend pour appliquer
+        le changement.
+      </p>
+
+      <div class="theme-options">
+        <button
+          type="button"
+          class="theme-option"
+          :class="{ 'is-active': dbSettings?.configured_driver === 'mysql' }"
+          :disabled="isSavingDbDriver || isLoadingDbSettings"
+          @click="selectDatabaseDriver('mysql')"
+        >
+          <span class="theme-option-emoji" aria-hidden="true">🗄️</span>
+          <span class="theme-option-label">MySQL</span>
+          <span class="theme-option-description">Base partagée, comme aujourd’hui.</span>
+        </button>
+
+        <button
+          type="button"
+          class="theme-option"
+          :class="{ 'is-active': dbSettings?.configured_driver === 'sqlite' }"
+          :disabled="isSavingDbDriver || isLoadingDbSettings"
+          @click="selectDatabaseDriver('sqlite')"
+        >
+          <span class="theme-option-emoji" aria-hidden="true">💾</span>
+          <span class="theme-option-label">SQLite (locale)</span>
+          <span class="theme-option-description">
+            Fichier local, sans serveur MySQL — indépendante des données actuelles.
+          </span>
         </button>
       </div>
     </section>
@@ -328,7 +422,17 @@ onMounted(() => {
 
       <div class="backup-upload">
         <p class="backup-upload-label">Restaurer depuis un fichier de sauvegarde (.sql)</p>
-        <input ref="fileInput" type="file" accept=".sql" @change="handleFileChange" />
+        <div class="backup-upload-control">
+          <button class="ghost-btn" type="button" @click="triggerFileInput">Choisir un fichier</button>
+          <span class="backup-upload-filename">{{ uploadedFile?.name || 'Aucun fichier choisi' }}</span>
+          <input
+            ref="fileInput"
+            class="backup-upload-input"
+            type="file"
+            accept=".sql"
+            @change="handleFileChange"
+          />
+        </div>
       </div>
     </section>
   </main>
@@ -414,6 +518,17 @@ onMounted(() => {
   color: var(--positive-text, #bfe0c9);
   border: 1px solid rgba(143, 168, 160, 0.24);
   font-size: 0.92rem;
+}
+
+.db-restart-warning {
+  margin: 0 0 0.9rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(242, 168, 120, 0.14);
+  color: var(--accent-sand, #f2a878);
+  border: 1px solid rgba(242, 168, 120, 0.28);
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .ghost-btn-danger {
@@ -533,6 +648,37 @@ onMounted(() => {
   margin: 0 0 0.5rem;
   color: var(--text-soft, #b3bbc4);
   font-size: 0.88rem;
+}
+
+.backup-upload-control {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.backup-upload-filename {
+  color: var(--text-dim, #7c88a6);
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le vrai <input type="file"> reste dans le DOM (accessible, ciblable par
+   .click()) mais invisible — c'est le bouton .ghost-btn juste à côté qui
+   déclenche le sélecteur natif, pour ne jamais montrer le contrôle
+   navigateur par défaut (qui ne peut pas être re-stylé de façon fiable
+   entre navigateurs). */
+.backup-upload-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 640px) {

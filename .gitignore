@@ -141,5 +141,7 @@ backend/backups/
 backend/backup-settings.json
 backend/statement_pdfs/
 backend/reports/
+backend/db-settings.json
+backend/data/
 
 .DS_Store

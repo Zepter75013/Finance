@@ -140,7 +140,8 @@ func (r *Repository) FindByReference(ctx context.Context, accountID uint64, refe
 // top of the frontend's own guard.
 func (r *Repository) Upsert(ctx context.Context, input UpsertStatementInput) (BankStatement, error) {
 	existing, err := r.FindByReference(ctx, input.AccountID, input.Reference)
-	if err == nil && existing.IsLocked {
+	statementExists := err == nil
+	if statementExists && existing.IsLocked {
 		return BankStatement{}, ErrStatementLocked
 	} else if err != nil && err != sql.ErrNoRows {
 		return BankStatement{}, err
@@ -161,7 +162,41 @@ func (r *Repository) Upsert(ctx context.Context, input UpsertStatementInput) (Ba
 		return BankStatement{}, err
 	}
 
-	query := `
+	// existing (chargé plus haut pour vérifier le verrouillage) nous dit déjà
+	// si la ligne existe — on choisit donc simplement entre UPDATE et INSERT
+	// en Go plutôt que de dépendre d'une syntaxe d'upsert propre à un moteur
+	// (ON DUPLICATE KEY UPDATE de MySQL n'a pas d'équivalent direct portable).
+	if statementExists {
+		updateQuery := `
+			UPDATE bank_statements
+			SET
+				statement_date = ?,
+				period_start = ?,
+				period_end = ?,
+				start_balance = ?,
+				end_balance = ?,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`
+
+		_, err = r.db.ExecContext(
+			ctx,
+			updateQuery,
+			statementDate,
+			periodStart,
+			periodEnd,
+			input.StartBalance,
+			input.EndBalance,
+			existing.ID,
+		)
+		if err != nil {
+			return BankStatement{}, err
+		}
+
+		return r.FindByReference(ctx, input.AccountID, input.Reference)
+	}
+
+	insertQuery := `
 		INSERT INTO bank_statements (
 			account_id,
 			reference,
@@ -171,17 +206,11 @@ func (r *Repository) Upsert(ctx context.Context, input UpsertStatementInput) (Ba
 			start_balance,
 			end_balance
 		) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			statement_date = VALUES(statement_date),
-			period_start = VALUES(period_start),
-			period_end = VALUES(period_end),
-			start_balance = VALUES(start_balance),
-			end_balance = VALUES(end_balance)
 	`
 
 	_, err = r.db.ExecContext(
 		ctx,
-		query,
+		insertQuery,
 		input.AccountID,
 		input.Reference,
 		statementDate,

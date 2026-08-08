@@ -4,11 +4,13 @@ import "os"
 
 type Config struct {
 	AppPort         string
+	DBDriver        string
 	DBHost          string
 	DBPort          string
 	DBName          string
 	DBUser          string
 	DBPassword      string
+	SQLitePath      string
 	FrontendURL     string
 	AdminUsername   string
 	AdminPassword   string
@@ -23,13 +25,29 @@ type Config struct {
 }
 
 func Load() Config {
+	// Le choix mysql/sqlite persisté depuis l'écran Préférences (fichier
+	// db-settings.json) prend le pas sur les variables d'environnement — mais
+	// seulement s'il existe déjà, pour ne rien changer au comportement actuel
+	// tant que personne n'a fait ce choix dans l'app.
+	dbDriver := getEnv("DB_DRIVER", DriverMySQL)
+	sqlitePath := getEnv("SQLITE_PATH", "data/finance.db")
+
+	if persisted, ok := LoadPersistedDBSettings(); ok {
+		dbDriver = persisted.Driver
+		if persisted.SQLitePath != "" {
+			sqlitePath = persisted.SQLitePath
+		}
+	}
+
 	return Config{
 		AppPort:         getEnv("APP_PORT", "8080"),
+		DBDriver:        dbDriver,
 		DBHost:          getEnv("DB_HOST", "localhost"),
 		DBPort:          getEnv("DB_PORT", "3306"),
 		DBName:          getEnv("DB_NAME", "finance"),
 		DBUser:          getEnv("DB_USER", "root"),
 		DBPassword:      getEnv("DB_PASSWORD", ""),
+		SQLitePath:      sqlitePath,
 		FrontendURL:     getEnv("FRONTEND_URL", "http://localhost:5173"),
 		AdminUsername:   getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),

@@ -12,6 +12,7 @@ import (
 	"finance/backend/internal/backup"
 	"finance/backend/internal/category"
 	"finance/backend/internal/config"
+	"finance/backend/internal/dbsettings"
 	"finance/backend/internal/incomes"
 	"finance/backend/internal/mailer"
 	"finance/backend/internal/purchase"
@@ -29,6 +30,8 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 		return nil, err
 	}
 	backupHandler := backup.NewHandler(backupService)
+
+	dbSettingsHandler := dbsettings.NewHandler(cfg.DBDriver)
 
 	accountRepo := account.NewRepository(db)
 	accountHandler := account.NewHandler(accountRepo)
@@ -60,7 +63,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 	mailerClient := mailer.New(cfg)
 	authHandler := auth.NewHandler(sessionRepo, userRepo, mailerClient)
 
-	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/health", healthHandler(cfg.DBDriver))
 
 	mux.HandleFunc("/auth/login", authHandler.Login)
 	mux.HandleFunc("/auth/logout", authHandler.Logout)
@@ -319,6 +322,19 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 		}
 	}))
 
+	mux.HandleFunc("/settings/database", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			dbSettingsHandler.Get(w, r)
+		case http.MethodPut:
+			dbSettingsHandler.Update(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
 	mux.HandleFunc("/backups/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -370,19 +386,26 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 	return withCORS(cfg.FrontendURL, mux), nil
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+// healthHandler expose aussi le moteur de base de données actif (mysql ou
+// sqlite) — une information publique, sans rapport avec les identifiants de
+// connexion, utile pour l'afficher sur l'écran de connexion (avant
+// authentification, donc inaccessible à /settings/database).
+func healthHandler(dbDriver string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		response := map[string]string{
+			"status":    "ok",
+			"service":   "finance-backend",
+			"timestamp": time.Now().Format(time.RFC3339),
+			"db_driver": dbDriver,
+		}
+
+		_ = json.NewEncoder(w).Encode(response)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	response := map[string]string{
-		"status":    "ok",
-		"service":   "finance-backend",
-		"timestamp": time.Now().Format(time.RFC3339),
-	}
-
-	_ = json.NewEncoder(w).Encode(response)
 }

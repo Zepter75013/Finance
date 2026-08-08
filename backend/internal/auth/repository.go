@@ -53,15 +53,20 @@ func (r *Repository) CreateSession(ctx context.Context, userID uint64) (Session,
 }
 
 func (r *Repository) FindValidSession(ctx context.Context, token string) (Session, error) {
+	// Comparé à l'heure passée en paramètre (celle de Go) plutôt qu'à une
+	// fonction "heure actuelle" côté base — NOW() (MySQL) et CURRENT_TIMESTAMP
+	// (SQLite, en UTC par défaut) n'utilisent pas forcément le même fuseau que
+	// expiresAt à l'écriture (time.Now(), heure locale) ; comparer aux deux
+	// bouts avec la même horloge Go évite tout décalage selon le moteur utilisé.
 	query := `
 		SELECT token, user_id, expires_at, created_at
 		FROM sessions
-		WHERE token = ? AND expires_at > NOW()
+		WHERE token = ? AND expires_at > ?
 	`
 
 	var s Session
 
-	err := r.db.QueryRowContext(ctx, query, token).Scan(
+	err := r.db.QueryRowContext(ctx, query, token, time.Now()).Scan(
 		&s.Token,
 		&s.UserID,
 		&s.ExpiresAt,

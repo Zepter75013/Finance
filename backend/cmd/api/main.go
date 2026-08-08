@@ -20,13 +20,13 @@ func main() {
 
 	cfg := config.Load()
 
-	db, err := database.OpenMySQL(cfg)
+	db, err := database.Open(cfg)
 	if err != nil {
-		log.Fatalf("mysql connection error: %v", err)
+		log.Fatalf("database connection error (driver=%s): %v", cfg.DBDriver, err)
 	}
 	defer db.Close()
 
-	log.Println("MySQL connection OK")
+	log.Printf("Database connection OK (driver=%s)", cfg.DBDriver)
 
 	userRepo := user.NewRepository(db)
 	if err := user.EnsureAdmin(context.Background(), userRepo, cfg.AdminUsername, cfg.AdminPassword); err != nil {

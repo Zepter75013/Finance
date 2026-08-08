@@ -52,13 +52,16 @@ func (r *Repository) CreateResetCode(ctx context.Context, userID uint64) (string
 func (r *Repository) ConsumeResetCode(ctx context.Context, userID uint64, code string) (bool, error) {
 	var id uint64
 
+	// Comparé à l'heure passée en paramètre (celle de Go), pas à une fonction
+	// "heure actuelle" côté base — voir le commentaire équivalent dans
+	// repository.go (FindValidSession) pour le détail du décalage évité.
 	query := `
 		SELECT id
 		FROM password_reset_codes
-		WHERE user_id = ? AND code = ? AND expires_at > NOW()
+		WHERE user_id = ? AND code = ? AND expires_at > ?
 	`
 
-	err := r.db.QueryRowContext(ctx, query, userID, code).Scan(&id)
+	err := r.db.QueryRowContext(ctx, query, userID, code, time.Now()).Scan(&id)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

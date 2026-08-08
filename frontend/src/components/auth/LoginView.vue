@@ -2,10 +2,26 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { requestResetCode, resetPasswordWithCode } from '../../services/auth'
+import { fetchHealth } from '../../services/purchases'
 import { APP_VERSION } from '../../version'
-import zepterLogo from '../../assets/zepter-logo.png'
+import loginLogo from '../../assets/charlie-digital-logo.png'
 
 const authStore = useAuthStore()
+
+// /health ne demande pas d'être connecté (contrairement à /settings/database)
+// — c'est la seule façon d'afficher le moteur de base de données actif dès
+// l'écran de connexion, avant toute authentification.
+const dbDriverLabel = ref('')
+
+async function loadDbDriverLabel() {
+  try {
+    const health = await fetchHealth()
+    dbDriverLabel.value = health.db_driver === 'sqlite' ? 'SQLite' : 'MySQL'
+  } catch {
+    // Purement informatif — pas d'erreur affichée si le backend est injoignable,
+    // le formulaire de connexion lui-même le signalera à la soumission.
+  }
+}
 
 const matrixCanvas = ref(null)
 let matrixTickInterval = null
@@ -60,6 +76,7 @@ function startNumberGrid(canvas) {
 
 onMounted(() => {
   if (matrixCanvas.value) startNumberGrid(matrixCanvas.value)
+  loadDbDriverLabel()
 })
 
 onBeforeUnmount(() => {
@@ -219,11 +236,11 @@ async function handleResetPassword() {
     <section class="login-card">
       <div class="login-brand">
         <div class="login-logo-wrap">
-          <img :src="zepterLogo" alt="Zepter" class="login-logo-image" />
+          <img :src="loginLogo" alt="Charlie digital" class="login-logo-image" />
         </div>
       </div>
 
-      <p class="login-version">v{{ APP_VERSION }}</p>
+      <p class="login-version">v{{ APP_VERSION }}<span v-if="dbDriverLabel"> · {{ dbDriverLabel }}</span></p>
 
       <template v-if="mode === 'login'">
         <div class="login-heading">
@@ -519,16 +536,21 @@ async function handleResetPassword() {
 .login-brand {
   display: flex;
   justify-content: center;
+  /* Le logo remonte sinon presque au niveau de la version affichée en haut à
+     droite (position absolue) — un peu d'espace au-dessus évite qu'il ne la
+     chevauche ou ne semble "à cheval" sur le bord de la carte. */
+  margin-top: 1.4rem;
   margin-bottom: 1.6rem;
 }
 
-/* Fond du logo transparent (le noir d'origine a été détouré) — un halo doux
-   aux couleurs du bouton "Se connecter" (var(--accent)/var(--accent-soft))
+/* Fond du logo transparent (le fond blanc d'origine a été détouré) — un halo
+   doux aux couleurs du bouton "Se connecter" (var(--accent)/var(--accent-soft))
    le met en valeur sans jamais former de bloc/plaque visible. */
 .login-logo-wrap {
   position: relative;
   width: 100%;
   max-width: 210px;
+  margin: 0 auto;
 }
 
 .login-logo-wrap::before {

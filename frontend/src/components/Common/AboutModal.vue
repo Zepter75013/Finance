@@ -1,7 +1,9 @@
 <script setup>
+import { ref, watch } from 'vue'
 import { APP_VERSION, APP_BUILD_TIME } from '../../version'
+import { fetchDatabaseSettings } from '../../services/settings'
 
-defineProps({
+const props = defineProps({
   modelValue: {
     type: Boolean,
     default: false,
@@ -9,6 +11,30 @@ defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+
+const dbDriverLabel = ref('')
+
+function driverLabel(driver) {
+  return driver === 'sqlite' ? 'SQLite (locale)' : 'MySQL'
+}
+
+// Chargé à l'ouverture plutôt qu'au montage — la modale est montée une seule
+// fois au démarrage de l'app (v-if interne), pas besoin d'appeler l'API tant
+// que personne n'a jamais ouvert "À propos".
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    if (!isOpen || dbDriverLabel.value) return
+
+    fetchDatabaseSettings()
+      .then((settings) => {
+        dbDriverLabel.value = driverLabel(settings.active_driver)
+      })
+      .catch(() => {
+        // Purement informatif — la modale reste utilisable sans cette ligne.
+      })
+  }
+)
 
 function closeModal() {
   emit('update:modelValue', false)
@@ -57,6 +83,10 @@ function formatBuildTime(value) {
           <div class="about-row">
             <dt>Compilé le</dt>
             <dd>{{ formatBuildTime(APP_BUILD_TIME) }}</dd>
+          </div>
+          <div v-if="dbDriverLabel" class="about-row">
+            <dt>Base de données</dt>
+            <dd>{{ dbDriverLabel }}</dd>
           </div>
         </dl>
 
