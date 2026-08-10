@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8080'
+import { API_BASE_URL } from '../config'
 
 async function extractErrorMessage(response, fallbackMessage) {
   let message = fallbackMessage

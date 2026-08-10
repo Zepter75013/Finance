@@ -2,8 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import PageHero from '../common/PageHero.vue'
-import ConfirmModal from '../common/ConfirmModal.vue'
+import PageHero from '../Common/PageHero.vue'
+import ConfirmModal from '../Common/ConfirmModal.vue'
 import ColumnVisibilityMenu from '../Common/ColumnVisibilityMenu.vue'
 import IncomeCharts from './IncomeCharts.vue'
 import IncomeRowCard from './IncomeRowCard.vue'

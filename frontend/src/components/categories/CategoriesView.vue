@@ -2,8 +2,8 @@
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import PageHero from '../common/PageHero.vue'
-import ConfirmModal from '../common/ConfirmModal.vue'
+import PageHero from '../Common/PageHero.vue'
+import ConfirmModal from '../Common/ConfirmModal.vue'
 import CategoryRowCard from './CategoryRowCard.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 

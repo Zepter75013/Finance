@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 
 import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
-import ConfirmModal from '../common/ConfirmModal.vue'
+import ConfirmModal from '../Common/ConfirmModal.vue'
 import CopyCategoriesModal from './CopyCategoriesModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 

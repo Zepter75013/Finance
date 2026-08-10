@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import PageHero from '../common/PageHero.vue'
-import ConfirmModal from '../common/ConfirmModal.vue'
+import PageHero from '../Common/PageHero.vue'
+import ConfirmModal from '../Common/ConfirmModal.vue'
 import UserFormModal from './UserFormModal.vue'
 import { useAuthStore } from '../../stores/auth'
 import { fetchUsers, deleteUser } from '../../services/users'

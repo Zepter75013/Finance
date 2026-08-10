@@ -1,0 +1,64 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: finance-backend
+    restart: always
+    environment:
+      DB_DRIVER: mysql
+      DB_HOST: bdd-mysql
+      DB_PORT: 3306
+      DB_NAME: ${FINANCE_DB_NAME}
+      DB_USER: ${FINANCE_DB_USER}
+      DB_PASSWORD: ${FINANCE_DB_PASSWORD}
+      APP_PORT: 8080
+      FRONTEND_URL: ${FRONTEND_URL}
+      ADMIN_USERNAME: ${FINANCE_ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${FINANCE_ADMIN_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      BACKUP_DIR: backups
+      STATEMENT_PDF_DIR: statement_pdfs
+      REPORT_DIR: reports
+      SQLITE_PATH: data/finance.db
+    # Accès direct optionnel (debug/API) — à retirer si un reverse-proxy
+    # externe se charge de tout exposer.
+    ports:
+      - "8091:8080"
+    volumes:
+      - ./finance-data/db:/app/data
+      - ./finance-data/backups:/app/backups
+      - ./finance-data/statement_pdfs:/app/statement_pdfs
+      - ./finance-data/reports:/app/reports
+      - ./finance-data/db-settings.json:/app/db-settings.json
+      - ./finance-data/backup-settings.json:/app/backup-settings.json
+    networks:
+      - disques-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: finance-frontend
+    restart: always
+    # Accès direct optionnel — à retirer si un reverse-proxy externe route
+    # déjà vers l'alias "finance-frontend" sur le réseau partagé.
+    ports:
+      - "8092:80"
+    depends_on:
+      - backend
+    networks:
+      disques-network:
+        aliases:
+          - finance-frontend
+
+networks:
+  disques-network:
+    external: true
+    name: disques-manager_disques-network

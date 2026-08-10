@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import PageHero from '../common/PageHero.vue'
+import PageHero from '../Common/PageHero.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { parseCsv } from '../../utils/csv'
 

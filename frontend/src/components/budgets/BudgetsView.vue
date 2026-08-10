@@ -12,7 +12,7 @@ import {
   BarController,
 } from 'chart.js'
 
-import PageHero from '../common/PageHero.vue'
+import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 
