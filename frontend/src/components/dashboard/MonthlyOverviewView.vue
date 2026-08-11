@@ -248,6 +248,10 @@ const monthlyRows = computed(() =>
     net: trendData.value.net[index],
   }))
 )
+
+const yearIncomeTotal = computed(() => trendData.value.income.reduce((sum, value) => sum + value, 0))
+const yearExpenseTotal = computed(() => trendData.value.spending.reduce((sum, value) => sum + value, 0))
+const yearNetTotal = computed(() => yearIncomeTotal.value - yearExpenseTotal.value)
 </script>
 
 <template>
@@ -289,6 +293,26 @@ const monthlyRows = computed(() =>
         </div>
       </template>
     </PageHero>
+
+    <section class="monthly-stats-grid">
+      <article class="panel stat-card">
+        <span>Revenus ({{ selectedYear }})</span>
+        <strong>{{ formatCurrency(yearIncomeTotal) }}</strong>
+        <p>Total de l’année</p>
+      </article>
+
+      <article class="panel stat-card">
+        <span>Dépenses ({{ selectedYear }})</span>
+        <strong>{{ formatCurrency(yearExpenseTotal) }}</strong>
+        <p>Total de l’année</p>
+      </article>
+
+      <article class="panel stat-card">
+        <span>Solde net ({{ selectedYear }})</span>
+        <strong>{{ formatCurrency(yearNetTotal) }}</strong>
+        <p>{{ yearNetTotal >= 0 ? 'Solde positif' : 'Solde négatif' }}</p>
+      </article>
+    </section>
 
     <article class="panel trend-card">
       <div class="panel-header">
@@ -345,6 +369,18 @@ const monthlyRows = computed(() =>
 .monthly-overview-view {
   display: grid;
   gap: 0.9rem;
+}
+
+.monthly-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+@media (max-width: 720px) {
+  .monthly-stats-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .account-switcher {

@@ -16,18 +16,22 @@ import (
 	"finance/backend/internal/incomes"
 	"finance/backend/internal/mailer"
 	"finance/backend/internal/purchase"
+	"finance/backend/internal/recurring"
 	"finance/backend/internal/report"
 	"finance/backend/internal/statement"
 	"finance/backend/internal/subcategory"
 	"finance/backend/internal/user"
 )
 
-func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
+// NewRouter builds the HTTP handler and also returns the recurring
+// transactions service, so main.go can drive the background scheduler
+// without re-instantiating the repositories it depends on.
+func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service, error) {
 	mux := http.NewServeMux()
 
 	backupService, err := backup.NewService(cfg, cfg.BackupDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	backupHandler := backup.NewHandler(backupService)
 
@@ -51,9 +55,13 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 	statementRepo := statement.NewRepository(db)
 	statementHandler := statement.NewHandler(statementRepo, cfg.StatementPdfDir, accountRepo)
 
+	recurringRepo := recurring.NewRepository(db)
+	recurringService := recurring.NewService(recurringRepo, purchaseRepo, incomeRepo)
+	recurringHandler := recurring.NewHandler(recurringRepo, accountRepo, recurringService)
+
 	reportService, err := report.NewService(cfg.ReportDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	reportHandler := report.NewHandler(reportService)
 
@@ -208,6 +216,44 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 			statementHandler.List(w, r)
 		case http.MethodPost:
 			statementHandler.Upsert(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
+	mux.HandleFunc("/recurring", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			recurringHandler.List(w, r)
+		case http.MethodPost:
+			recurringHandler.Create(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
+	mux.HandleFunc("/recurring/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/execute") {
+			switch r.Method {
+			case http.MethodPost:
+				recurringHandler.Execute(w, r)
+			case http.MethodOptions:
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
+		switch r.Method {
+		case http.MethodPut:
+			recurringHandler.Update(w, r)
+		case http.MethodDelete:
+			recurringHandler.Delete(w, r)
 		case http.MethodOptions:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -383,7 +429,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 		}
 	}))
 
-	return withCORS(cfg.FrontendURL, mux), nil
+	return withCORS(cfg.FrontendURL, mux), recurringService, nil
 }
 
 // healthHandler expose aussi le moteur de base de données actif (mysql ou

@@ -134,6 +134,27 @@ var sqliteSchemaStatements = []string{
 		PRIMARY KEY (user_id, account_id)
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_user_accounts_account ON user_accounts (account_id)`,
+	`CREATE TABLE IF NOT EXISTS recurring_transactions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+		type TEXT NOT NULL CHECK (type IN ('achat', 'revenu')),
+		merchant TEXT,
+		source TEXT,
+		category_id INTEGER REFERENCES categories (id) ON DELETE SET NULL,
+		payment_method TEXT,
+		operation_type TEXT,
+		category TEXT,
+		sub_category TEXT NOT NULL DEFAULT '',
+		amount DECIMAL(10, 2) NOT NULL,
+		day_of_month INTEGER NOT NULL CHECK (day_of_month BETWEEN 1 AND 31),
+		note TEXT,
+		is_active INTEGER NOT NULL DEFAULT 1,
+		next_run_date DATE NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_recurring_account_id ON recurring_transactions (account_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_recurring_next_run_date ON recurring_transactions (next_run_date)`,
 	// Un compte par défaut est indispensable : achats/revenus/catégories
 	// exigent tous un account_id, l'app serait inutilisable sans au moins un
 	// compte existant dès le premier démarrage sur une base vierge.

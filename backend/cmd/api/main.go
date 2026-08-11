@@ -4,14 +4,33 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"finance/backend/internal/config"
 	"finance/backend/internal/database"
 	apphttp "finance/backend/internal/http"
+	"finance/backend/internal/recurring"
 	"finance/backend/internal/user"
 
 	"github.com/joho/godotenv"
 )
+
+// runRecurringScheduler exécute les transactions récurrentes dues, une fois
+// immédiatement (rattrape ce qui a pu être manqué pendant un arrêt du
+// conteneur), puis toutes les heures — largement suffisant pour une
+// granularité "jour du mois", inutile d'introduire une dépendance de cron.
+func runRecurringScheduler(recurringService *recurring.Service) {
+	ctx := context.Background()
+
+	recurringService.RunDue(ctx, time.Now())
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		recurringService.RunDue(ctx, time.Now())
+	}
+}
 
 func main() {
 	if err := godotenv.Load(); err != nil {
@@ -33,10 +52,12 @@ func main() {
 		log.Printf("warning: %v", err)
 	}
 
-	router, err := apphttp.NewRouter(db, cfg)
+	router, recurringService, err := apphttp.NewRouter(db, cfg)
 	if err != nil {
 		log.Fatalf("router init error: %v", err)
 	}
+
+	go runRecurringScheduler(recurringService)
 
 	addr := ":" + cfg.AppPort
 	log.Printf("Finance backend listening on http://localhost%s", addr)

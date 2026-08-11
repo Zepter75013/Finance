@@ -11,6 +11,7 @@ import ChangePasswordModal from './components/auth/ChangePasswordModal.vue'
 import AboutModal from './components/Common/AboutModal.vue'
 import DashboardView from './components/dashboard/DashboardView.vue'
 import MonthlyOverviewView from './components/dashboard/MonthlyOverviewView.vue'
+import RecurringView from './components/recurring/RecurringView.vue'
 import PurchasesView from './components/dashboard/PurchasesView.vue'
 import PurchaseFormModal from './components/dashboard/PurchaseFormModal.vue'
 import DeletePurchaseModal from './components/dashboard/DeletePurchaseModal.vue'
@@ -100,6 +101,23 @@ watch(isAuthenticated, (authenticated) => {
   if (authenticated) {
     purchasesStore.loadPurchases()
   }
+})
+
+// Une transaction récurrente peut être créée côté serveur pendant qu'un
+// onglet reste ouvert en arrière-plan (planificateur de fond) — sans ce
+// rechargement, elle n'apparaîtrait jamais sans rafraîchissement manuel.
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible' && isAuthenticated.value) {
+    purchasesStore.loadPurchases()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 async function handleLogout() {
@@ -516,6 +534,8 @@ function handleBulkDeleted(result) {
         <DashboardView v-else-if="activeView === 'dashboard'" />
 
         <MonthlyOverviewView v-else-if="activeView === 'monthly'" />
+
+        <RecurringView v-else-if="activeView === 'recurring'" />
 
         <template v-else>
           <section

@@ -73,6 +73,7 @@
             <option value="Mastercard">Mastercard</option>
             <option value="Espèces">Espèces</option>
             <option value="Virement">Virement</option>
+            <option value="Prélèvement">Prélèvement</option>
           </select>
         </label>
 

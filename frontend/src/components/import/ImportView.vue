@@ -55,7 +55,7 @@ const existingIncomeKeys = computed(() => {
   return keys
 })
 
-const PAYMENT_METHODS = ['Carte bancaire', 'Visa', 'Mastercard', 'Espèces', 'Virement']
+const PAYMENT_METHODS = ['Carte bancaire', 'Visa', 'Mastercard', 'Espèces', 'Virement', 'Prélèvement']
 
 const DATE_KEYWORDS = ['date']
 const LABEL_KEYWORDS = ['libell', 'description', 'intitul', 'communication', 'nature', 'operation', 'opération', 'tiers']

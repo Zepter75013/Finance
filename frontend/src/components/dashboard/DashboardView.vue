@@ -24,6 +24,22 @@ const budgetUsedPercent = computed(() => {
   return (currentMonthExpenseSpent.value / currentMonthExpenseBudget.value) * 100
 })
 
+// La bannière de dépassement de budget se masque pour le mois en cours une
+// fois fermée, mais réapparaît naturellement le mois suivant si le budget
+// est de nouveau dépassé (clé de stockage incluant le mois).
+const BUDGET_ALERT_DISMISSED_KEY = 'budgetAlertDismissedMonth'
+const currentMonthKey = new Date().toISOString().slice(0, 7)
+const dismissedMonth = ref(localStorage.getItem(BUDGET_ALERT_DISMISSED_KEY))
+
+const showBudgetAlert = computed(
+  () => currentMonthBudgetRemaining.value < 0 && dismissedMonth.value !== currentMonthKey
+)
+
+function dismissBudgetAlert() {
+  dismissedMonth.value = currentMonthKey
+  localStorage.setItem(BUDGET_ALERT_DISMISSED_KEY, currentMonthKey)
+}
+
 // Passe par l'action du store (et non un simple v-model direct sur le ref)
 // pour que le changement de compte actif soit bien persisté en localStorage.
 const activeAccountId = computed({
@@ -126,6 +142,14 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
       </template>
     </PageHero>
 
+    <div v-if="showBudgetAlert" class="budget-alert">
+      <span class="budget-alert-icon" aria-hidden="true">⚠️</span>
+      <p>
+        Budget dépassé ce mois-ci de <strong>{{ formatCurrency(-currentMonthBudgetRemaining) }}</strong>.
+      </p>
+      <button class="ghost-btn" type="button" @click="dismissBudgetAlert">Masquer</button>
+    </div>
+
     <section class="dashboard-stats-grid">
       <article class="panel stat-card">
         <span>Dépenses ({{ selectedYear }})</span>
@@ -169,6 +193,28 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
 .dashboard-view {
   display: grid;
   gap: 0.9rem;
+}
+
+.budget-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 16px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.24);
+}
+
+.budget-alert-icon {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.budget-alert p {
+  flex: 1;
+  margin: 0;
+  color: var(--negative-text, #fca5a5);
+  font-size: 0.92rem;
 }
 
 .dashboard-stats-grid {
