@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 const store = usePurchasesStore()
 const { incomes } = storeToRefs(store)
@@ -81,22 +82,7 @@ const chartGranularity = computed(() =>
   selectedRange.value === '30d' || selectedRange.value === '90d' ? 'day' : 'month'
 )
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
-function formatCompactCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
-}
 
 function formatPercent(value) {
   if (!Number.isFinite(value)) return '—'
@@ -363,7 +349,7 @@ const dashboardHighlights = computed(() => {
       label: 'Mois record',
       value:
         annualSummary.value.bestMonth.total > 0
-          ? `${annualSummary.value.bestMonth.label} · ${formatCompactCurrency(annualSummary.value.bestMonth.total)}`
+          ? `${annualSummary.value.bestMonth.label} · ${formatCurrency(annualSummary.value.bestMonth.total, { decimals: 0 })}`
           : 'Aucune donnée',
       caption: 'Pic de performance',
       tone: 'champagne',
@@ -522,7 +508,7 @@ function toggleSelectedMonth(monthIndex) {
             <span class="fin-source-name">{{ source.label }}</span>
           </div>
           <div class="fin-source-values">
-            <strong>{{ formatCompactCurrency(source.value) }}</strong>
+            <strong>{{ formatCurrency(source.value, { decimals: 0 }) }}</strong>
             <span>{{ source.share.toFixed(0) }}%</span>
           </div>
         </div>
@@ -551,7 +537,7 @@ function toggleSelectedMonth(monthIndex) {
 
           <article class="fin-summary-pill featured-pill">
             <span>Meilleur mois</span>
-            <strong>{{ annualSummary.bestMonth.label }} · {{ formatCompactCurrency(annualSummary.bestMonth.total) }}</strong>
+            <strong>{{ annualSummary.bestMonth.label }} · {{ formatCurrency(annualSummary.bestMonth.total, { decimals: 0 }) }}</strong>
           </article>
 
           <article class="fin-summary-pill">
@@ -590,7 +576,7 @@ function toggleSelectedMonth(monthIndex) {
               <span class="fin-month-name">{{ month.label }}</span>
               <span v-if="month.isBest" class="fin-month-tag">Top</span>
             </div>
-            <strong class="fin-month-value">{{ formatCompactCurrency(month.total) }}</strong>
+            <strong class="fin-month-value">{{ formatCurrency(month.total, { decimals: 0 }) }}</strong>
             <span class="fin-month-variation" :class="{ positive: month.variation > 0, negative: month.variation < 0 }">
               {{ Number.isFinite(month.variation) ? formatPercent(month.variation) : '—' }}
             </span>
@@ -619,7 +605,7 @@ function toggleSelectedMonth(monthIndex) {
                 class="fin-focus-row"
               >
                 <span>{{ source.label }}</span>
-                <strong>{{ formatCompactCurrency(source.value) }}</strong>
+                <strong>{{ formatCurrency(source.value, { decimals: 0 }) }}</strong>
               </div>
             </div>
           </div>

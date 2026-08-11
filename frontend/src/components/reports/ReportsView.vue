@@ -24,6 +24,7 @@ import {
   uploadGeneratedReport,
   viewLatestReportPdf,
 } from '../../services/reports'
+import { formatCurrency } from '../../utils/format'
 
 ChartJS.register(
   Title,
@@ -381,13 +382,6 @@ function resetFilters() {
   reportSubCategories.value = []
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
 // Les polices standard de jsPDF (Helvetica) n'ont pas les glyphes des espaces
 // insécable/fine insécable utilisées par Intl pour séparer les milliers —

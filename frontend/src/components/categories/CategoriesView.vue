@@ -6,6 +6,7 @@ import PageHero from '../Common/PageHero.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
 import CategoryRowCard from './CategoryRowCard.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 const props = defineProps({
   isLoading: {
@@ -78,13 +79,6 @@ const totalTrackedAmount = computed(() => {
   return categoryCards.value.reduce((sum, category) => sum + category.totalAmount, 0)
 })
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
 function handleCreate() {
   emit('create', activeType.value)

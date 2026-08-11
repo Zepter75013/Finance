@@ -15,6 +15,7 @@ import {
 import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 ChartJS.register(Title, Tooltip, Legend, CategoryScale, LinearScale, BarElement, BarController)
 
@@ -29,12 +30,6 @@ const {
   currentMonthBudgetRemaining,
 } = storeToRefs(purchasesStore)
 
-function formatAmount(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(Number(value || 0))
-}
 
 const currentMonthKey = new Date().toISOString().slice(0, 7)
 
@@ -222,9 +217,9 @@ const purchaseCount = computed(
   () => purchases.value.filter((p) => p.date?.slice(0, 7) === currentMonthKey).length
 )
 
-const formattedMonthlyBudget = computed(() => formatAmount(monthlyBudget.value))
-const formattedSpentAmount = computed(() => formatAmount(totalMonthAmount.value))
-const formattedRemainingBudget = computed(() => formatAmount(budgetRemaining.value))
+const formattedMonthlyBudget = computed(() => formatCurrency(monthlyBudget.value))
+const formattedSpentAmount = computed(() => formatCurrency(totalMonthAmount.value))
+const formattedRemainingBudget = computed(() => formatCurrency(budgetRemaining.value))
 
 const budgetStatusLabel = computed(() => {
   if (budgetUsagePercent.value >= 100) return 'Budget atteint'
@@ -430,14 +425,14 @@ onBeforeUnmount(destroyHistoryChart)
 
           <div class="category-budget-meta">
             <span :class="category.isRevenue ? 'amount-positive' : 'amount-negative'">
-              {{ formatAmount(category.spent) }}
+              {{ formatCurrency(category.spent) }}
               {{ category.isRevenue ? 'reçus' : 'dépensés' }}
             </span>
-            <span>{{ category.budget > 0 ? `${formatAmount(category.budget)} prévus` : 'Pas encore de moyenne' }}</span>
+            <span>{{ category.budget > 0 ? `${formatCurrency(category.budget)} prévus` : 'Pas encore de moyenne' }}</span>
           </div>
 
           <p v-if="category.isOverridden && category.average > 0" class="category-budget-suggestion">
-            Moyenne habituelle : {{ formatAmount(category.average) }} / mois
+            Moyenne habituelle : {{ formatCurrency(category.average) }} / mois
           </p>
 
           <div class="category-budget-actions">
@@ -480,7 +475,7 @@ onBeforeUnmount(destroyHistoryChart)
           <div class="history-total-figure">
             <span class="savings-label">Épargne réelle cumulée</span>
             <strong :class="totalActualSavings >= 0 ? 'amount-positive' : 'amount-negative'">
-              {{ formatAmount(totalActualSavings) }}
+              {{ formatCurrency(totalActualSavings) }}
             </strong>
             <span class="savings-hint">Sur les mois déjà terminés</span>
           </div>
@@ -488,10 +483,10 @@ onBeforeUnmount(destroyHistoryChart)
           <div v-if="currentMonthRow" class="history-total-figure">
             <span class="savings-label">{{ currentMonthRow.label }} — en cours</span>
             <strong :class="currentMonthRow.actualSavings >= 0 ? 'amount-positive' : 'amount-negative'">
-              {{ formatAmount(currentMonthRow.actualSavings) }}
+              {{ formatCurrency(currentMonthRow.actualSavings) }}
             </strong>
             <span class="savings-hint">
-              Réalisé partiel — provision : {{ formatAmount(currentMonthRow.provisionedSavings) }}
+              Réalisé partiel — provision : {{ formatCurrency(currentMonthRow.provisionedSavings) }}
             </span>
           </div>
         </div>
@@ -513,25 +508,25 @@ onBeforeUnmount(destroyHistoryChart)
             <tbody>
               <tr v-for="month in pastMonths" :key="month.key">
                 <td>{{ month.label }}</td>
-                <td>{{ formatAmount(month.actualExpense) }}</td>
-                <td>{{ formatAmount(month.actualIncome) }}</td>
+                <td>{{ formatCurrency(month.actualExpense) }}</td>
+                <td>{{ formatCurrency(month.actualIncome) }}</td>
                 <td :class="month.actualSavings >= 0 ? 'amount-positive' : 'amount-negative'">
-                  {{ formatAmount(month.actualSavings) }}
+                  {{ formatCurrency(month.actualSavings) }}
                 </td>
               </tr>
               <tr v-if="currentMonthRow" class="history-current-row">
                 <td>{{ currentMonthRow.label }} (en cours)</td>
                 <td>
-                  {{ formatAmount(currentMonthRow.actualExpense) }}
-                  <span class="history-provision-hint">/ provision {{ formatAmount(currentMonthRow.provisionedExpense) }}</span>
+                  {{ formatCurrency(currentMonthRow.actualExpense) }}
+                  <span class="history-provision-hint">/ provision {{ formatCurrency(currentMonthRow.provisionedExpense) }}</span>
                 </td>
                 <td>
-                  {{ formatAmount(currentMonthRow.actualIncome) }}
-                  <span class="history-provision-hint">/ provision {{ formatAmount(currentMonthRow.provisionedIncome) }}</span>
+                  {{ formatCurrency(currentMonthRow.actualIncome) }}
+                  <span class="history-provision-hint">/ provision {{ formatCurrency(currentMonthRow.provisionedIncome) }}</span>
                 </td>
                 <td :class="currentMonthRow.actualSavings >= 0 ? 'amount-positive' : 'amount-negative'">
-                  {{ formatAmount(currentMonthRow.actualSavings) }}
-                  <span class="history-provision-hint">/ provision {{ formatAmount(currentMonthRow.provisionedSavings) }}</span>
+                  {{ formatCurrency(currentMonthRow.actualSavings) }}
+                  <span class="history-provision-hint">/ provision {{ formatCurrency(currentMonthRow.provisionedSavings) }}</span>
                 </td>
               </tr>
             </tbody>

@@ -5,6 +5,7 @@ import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { parseCsv, normalizeAmount, normalizeDate } from '../../utils/csv'
+import { formatCurrency, formatDate } from '../../utils/format'
 
 const emit = defineEmits(['imported'])
 
@@ -296,25 +297,7 @@ function handleDrop(event) {
   handleFile(file)
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(Number(value || 0))
-}
 
-function formatDate(value) {
-  if (!value) return ''
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-
-  return `${day}/${month}/${year}`
-}
 
 function formatDraftDate(value) {
   const date = new Date(value)

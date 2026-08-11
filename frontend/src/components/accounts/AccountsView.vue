@@ -7,16 +7,11 @@ import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
 import CopyCategoriesModal from './CopyCategoriesModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 const store = usePurchasesStore()
 const { accountsList } = storeToRefs(store)
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(Number(value || 0))
-}
 
 // Les achats/revenus en mémoire ne couvrent plus que le compte actif (chaque
 // compte a désormais ses propres données) — l'utilisation de chaque compte

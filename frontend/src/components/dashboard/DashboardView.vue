@@ -7,6 +7,7 @@ import CircularProgress from '../Common/CircularProgress.vue'
 import DashboardCharts from './DashboardCharts.vue'
 import CategorySubTrendGrid from './CategorySubTrendGrid.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 const store = usePurchasesStore()
 const {
@@ -83,12 +84,6 @@ const yearIncomeTotal = computed(() =>
 )
 const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.value)
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-  }).format(Number(value || 0))
-}
 </script>
 
 <template>

@@ -16,6 +16,7 @@ import {
   viewStatementPdf,
   deleteStatementPdf,
 } from '../../services/statements'
+import { formatCurrency, formatDate } from '../../utils/format'
 
 const store = usePurchasesStore()
 const { purchases, incomes } = storeToRefs(store)
@@ -433,26 +434,7 @@ function normalizeSearchValue(value) {
     .trim()
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
-function formatDate(value) {
-  if (!value) return ''
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = String(date.getFullYear()).slice(-2)
-
-  return `${day}/${month}/${year}`
-}
 
 function truncatePdfName(name, maxLength = 16) {
   const trimmed = String(name ?? '').trim()

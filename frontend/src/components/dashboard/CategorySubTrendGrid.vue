@@ -16,6 +16,7 @@ import {
 import { Chart } from 'vue-chartjs'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 ChartJS.register(
   Tooltip,
@@ -45,14 +46,6 @@ const props = defineProps({
 const store = usePurchasesStore()
 const { purchases, categoriesList } = storeToRefs(store)
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
-}
 
 function monthLabel(monthIndex, format) {
   const formatted = new Intl.DateTimeFormat('fr-FR', { month: format }).format(

@@ -9,6 +9,7 @@ import PurchaseCharts from './PurchaseCharts.vue'
 import PurchaseRowCard from './PurchaseRowCard.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useTableColumns } from '../../composables/useTableColumns'
+import { formatCurrency } from '../../utils/format'
 
 const props = defineProps({
   isLoading: {
@@ -457,13 +458,6 @@ const hasVisibleActivity = computed(() =>
   isGrouped.value ? groupedPurchases.value.length > 0 : sortedActivityPurchases.value.length > 0
 )
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
 function selectPurchase(purchase) {
   selectedPurchaseId.value = purchase.id

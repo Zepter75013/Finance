@@ -18,6 +18,7 @@ import { Chart } from 'vue-chartjs'
 
 import PageHero from '../Common/PageHero.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 ChartJS.register(
   Title,
@@ -110,14 +111,6 @@ const monthWindow = computed(() => {
   return months
 })
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
-}
 
 const trendData = computed(() => {
   const spendingByMonth = new Map()
@@ -215,7 +208,7 @@ const trendChartOptions = {
           return monthWindow.value[index]?.fullLabel ?? items[0]?.label ?? ''
         },
         label(context) {
-          return `${context.dataset.label} : ${formatCurrency(context.raw)}`
+          return `${context.dataset.label} : ${formatCurrency(context.raw, { decimals: 0 })}`
         },
         labelColor(context) {
           const color = context.dataset.borderColor || context.dataset.backgroundColor
@@ -236,7 +229,7 @@ const trendChartOptions = {
     y: {
       beginAtZero: true,
       grace: '15%',
-      ticks: { color: '#99a5ae', callback: (value) => formatCurrency(value) },
+      ticks: { color: '#99a5ae', callback: (value) => formatCurrency(value, { decimals: 0 }) },
       grid: { color: 'rgba(var(--tint-rgb), 0.055)' },
       border: { display: false },
     },
@@ -335,10 +328,10 @@ const monthlyRows = computed(() =>
           <tbody>
             <tr v-for="row in monthlyRows" :key="row.key">
               <td>{{ row.label }}</td>
-              <td class="cell-income">{{ formatCurrency(row.income) }}</td>
-              <td class="cell-expense">{{ formatCurrency(row.expense) }}</td>
+              <td class="cell-income">{{ formatCurrency(row.income, { decimals: 0 }) }}</td>
+              <td class="cell-expense">{{ formatCurrency(row.expense, { decimals: 0 }) }}</td>
               <td :class="row.net >= 0 ? 'cell-net-positive' : 'cell-net-negative'">
-                {{ formatCurrency(row.net) }}
+                {{ formatCurrency(row.net, { decimals: 0 }) }}
               </td>
             </tr>
           </tbody>

@@ -1,4 +1,6 @@
 <script setup>
+import { formatCurrency, formatDate as formatIncomeDate } from '../../utils/format'
+
 const props = defineProps({
   income: {
     type: Object,
@@ -16,25 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'edit', 'delete', 'toggle-check'])
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
-function formatIncomeDate(value) {
-  if (!value) return ''
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-
-  return `${day}/${month}/${date.getFullYear()}`
-}
 
 function getSourceIcon(source) {
   const normalized = String(source || '').toLowerCase()

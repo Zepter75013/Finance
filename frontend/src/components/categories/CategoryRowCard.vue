@@ -1,4 +1,5 @@
 <script setup>
+import { formatCurrency } from '../../utils/format'
 const props = defineProps({
   category: {
     type: Object,
@@ -12,13 +13,6 @@ const props = defineProps({
 
 const emit = defineEmits(['edit', 'delete', 'toggle-check', 'open-purchases'])
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
 function handleOpenPurchases() {
   if (props.category.purchaseCount === 0) return

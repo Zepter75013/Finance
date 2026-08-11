@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import PageHero from '../Common/PageHero.vue'
 import RestoreBackupModal from './RestoreBackupModal.vue'
 import { useThemeStore } from '../../stores/theme'
+import { usePreferencesStore } from '../../stores/preferences'
 import {
   fetchBackups,
   createBackup,
@@ -29,6 +30,33 @@ const THEME_OPTIONS = [
 function selectTheme(value) {
   themeStore.setTheme(value)
 }
+
+const preferencesStore = usePreferencesStore()
+const { currencyCode, currencyPosition, numberFormatStyle, dateFormatStyle } = storeToRefs(preferencesStore)
+
+const CURRENCY_OPTIONS = [
+  { value: 'EUR', label: 'Euro — €' },
+  { value: 'USD', label: 'Dollar US — $' },
+  { value: 'GBP', label: 'Livre Sterling — £' },
+  { value: 'CHF', label: 'Franc Suisse — CHF' },
+]
+
+const CURRENCY_POSITION_OPTIONS = [
+  { value: 'after', label: 'Après le montant', example: '1 234,56 €' },
+  { value: 'before', label: 'Avant le montant', example: '€1 234,56' },
+]
+
+const NUMBER_FORMAT_OPTIONS = [
+  { value: 'fr', label: 'Français', example: '1 234,56' },
+  { value: 'us', label: 'Anglais US', example: '1,234.56' },
+  { value: 'ch', label: 'Suisse', example: "1'234.56" },
+]
+
+const DATE_FORMAT_OPTIONS = [
+  { value: 'dmy', label: 'Jour/Mois/Année', example: '11/08/2026' },
+  { value: 'mdy', label: 'Mois/Jour/Année', example: '08/11/2026' },
+  { value: 'iso', label: 'Année-Mois-Jour', example: '2026-08-11' },
+]
 
 const backups = ref([])
 const isLoadingBackups = ref(false)
@@ -305,6 +333,56 @@ onMounted(() => {
     <section class="panel preferences-card">
       <div class="panel-header">
         <div>
+          <p class="eyebrow">Personnalisation</p>
+          <h2>Format d’affichage</h2>
+        </div>
+      </div>
+
+      <div class="preferences-field-grid">
+        <label class="form-field">
+          <span>Devise</span>
+          <select :value="currencyCode" @change="preferencesStore.setCurrencyCode($event.target.value)">
+            <option v-for="option in CURRENCY_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Placement de la devise</span>
+          <select :value="currencyPosition" @change="preferencesStore.setCurrencyPosition($event.target.value)">
+            <option v-for="option in CURRENCY_POSITION_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }} ({{ option.example }})
+            </option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Format des nombres</span>
+          <select
+            :value="numberFormatStyle"
+            @change="preferencesStore.setNumberFormatStyle($event.target.value)"
+          >
+            <option v-for="option in NUMBER_FORMAT_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }} ({{ option.example }})
+            </option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Format de date</span>
+          <select :value="dateFormatStyle" @change="preferencesStore.setDateFormatStyle($event.target.value)">
+            <option v-for="option in DATE_FORMAT_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }} ({{ option.example }})
+            </option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel preferences-card">
+      <div class="panel-header">
+        <div>
           <p class="eyebrow">Stockage</p>
           <h2>Base de données</h2>
         </div>
@@ -461,6 +539,49 @@ onMounted(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
   margin-top: 0.9rem;
+}
+
+.preferences-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+}
+
+.form-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.form-field span {
+  color: var(--text-soft, #b3bbc4);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.form-field select {
+  width: 100%;
+  border: 1px solid rgba(var(--tint-rgb), 0.07);
+  border-radius: 14px;
+  background: rgba(var(--tint-rgb), 0.035);
+  color: var(--text, #eef1f3);
+  padding: 0.9rem 1rem;
+  outline: none;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.form-field select:focus {
+  border-color: rgba(219, 230, 223, 0.35);
+  background: rgba(var(--tint-rgb), 0.05);
+}
+
+@media (max-width: 640px) {
+  .preferences-field-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .theme-option {

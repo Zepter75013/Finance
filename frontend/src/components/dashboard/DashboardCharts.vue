@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { Chart as ChartJS, Title, Tooltip, Legend, ArcElement, PieController } from 'chart.js'
 import { Pie } from 'vue-chartjs'
 import { usePurchasesStore } from '../../stores/purchases'
+import { formatCurrency } from '../../utils/format'
 
 ChartJS.register(Title, Tooltip, Legend, ArcElement, PieController)
 
@@ -28,14 +29,6 @@ const MAX_VISIBLE_SLICES = 5
 const store = usePurchasesStore()
 const { purchases, incomes } = storeToRefs(store)
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
-}
 
 function buildBreakdown(items, amountOf, keyOf) {
   const totals = new Map()
@@ -158,7 +151,7 @@ const sourceLegend = computed(() => buildLegendEntries(sourceBreakdown.value))
             <li v-for="entry in categoryLegend" :key="entry.label">
               <span class="pie3d-legend-swatch" :style="{ background: entry.color }"></span>
               <span class="pie3d-legend-label">{{ entry.label }}</span>
-              <span class="pie3d-legend-value">{{ formatCurrency(entry.value) }} · {{ entry.percent }}%</span>
+              <span class="pie3d-legend-value">{{ formatCurrency(entry.value, { decimals: 0 }) }} · {{ entry.percent }}%</span>
             </li>
           </ul>
         </template>
@@ -192,7 +185,7 @@ const sourceLegend = computed(() => buildLegendEntries(sourceBreakdown.value))
             <li v-for="entry in sourceLegend" :key="entry.label">
               <span class="pie3d-legend-swatch" :style="{ background: entry.color }"></span>
               <span class="pie3d-legend-label">{{ entry.label }}</span>
-              <span class="pie3d-legend-value">{{ formatCurrency(entry.value) }} · {{ entry.percent }}%</span>
+              <span class="pie3d-legend-value">{{ formatCurrency(entry.value, { decimals: 0 }) }} · {{ entry.percent }}%</span>
             </li>
           </ul>
         </template>

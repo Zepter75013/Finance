@@ -9,6 +9,7 @@ import IncomeCharts from './IncomeCharts.vue'
 import IncomeRowCard from './IncomeRowCard.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useTableColumns } from '../../composables/useTableColumns'
+import { formatCurrency } from '../../utils/format'
 
 const props = defineProps({
   isLoading: {
@@ -478,13 +479,6 @@ const hasVisibleActivity = computed(() =>
   isGrouped.value ? groupedIncomes.value.length > 0 : sortedActivityIncomes.value.length > 0
 )
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
 
 function selectIncome(income) {
   selectedIncomeId.value = income.id
