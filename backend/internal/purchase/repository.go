@@ -274,6 +274,20 @@ func (r *Repository) Update(ctx context.Context, id uint64, input CreatePurchase
 	return scanPurchase(r.db.QueryRowContext(ctx, selectQuery, id))
 }
 
+// AccountIDOf résout le compte d'un achat existant — utilisé pour vérifier
+// les droits d'accès sur Update/Delete, qui ne reçoivent pas account_id dans
+// leur requête (contrairement à Create).
+func (r *Repository) AccountIDOf(ctx context.Context, id uint64) (uint64, error) {
+	var accountID uint64
+
+	err := r.db.QueryRowContext(ctx, `SELECT account_id FROM purchases WHERE id = ?`, id).Scan(&accountID)
+	if err != nil {
+		return 0, err
+	}
+
+	return accountID, nil
+}
+
 func (r *Repository) Delete(ctx context.Context, id uint64) error {
 	deleteQuery := `
 		DELETE FROM purchases

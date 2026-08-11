@@ -22,6 +22,7 @@ const avatarLetter = computed(() => props.username?.trim().charAt(0).toUpperCase
 
 const ICON_EMOJI = {
   dashboard: '📊',
+  monthly: '📅',
   purchases: '🛍️',
   incomes: '💰',
   budgets: '🎯',
@@ -38,6 +39,7 @@ const ICON_EMOJI = {
 
 const ICON_COLORS = {
   dashboard: '#7aa2f7',
+  monthly: '#e0a15c',
   purchases: '#f0a95e',
   incomes: '#5ecb8f',
   budgets: '#b18cf0',
@@ -54,6 +56,7 @@ const ICON_COLORS = {
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { key: 'monthly', label: 'Revenus & Dépenses', icon: 'monthly' },
   { key: 'purchases', label: 'Achats', icon: 'purchases' },
   { key: 'incomes', label: 'Revenus', icon: 'incomes' },
   { key: 'budgets', label: 'Budgets', icon: 'budgets' },

@@ -6,14 +6,41 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"finance/backend/internal/account"
+	"finance/backend/internal/authctx"
 )
 
 type Handler struct {
-	repo *Repository
+	repo        *Repository
+	accountRepo *account.Repository
 }
 
-func NewHandler(repo *Repository) *Handler {
-	return &Handler{repo: repo}
+func NewHandler(repo *Repository, accountRepo *account.Repository) *Handler {
+	return &Handler{repo: repo, accountRepo: accountRepo}
+}
+
+// checkAccountAccess renvoie false (et écrit déjà la réponse 403) si
+// l'utilisateur courant n'a pas le droit d'agir sur accountID.
+func (h *Handler) checkAccountAccess(w http.ResponseWriter, r *http.Request, accountID uint64) bool {
+	userID, ok := authctx.UserID(r.Context())
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+
+	allowed, err := h.accountRepo.UserCanAccess(r.Context(), userID, accountID)
+	if err != nil {
+		http.Error(w, "échec de la vérification des droits", http.StatusInternalServerError)
+		return false
+	}
+
+	if !allowed {
+		http.Error(w, "vous n'avez pas accès à ce compte", http.StatusForbidden)
+		return false
+	}
+
+	return true
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -25,6 +52,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	accountID, err := strconv.ParseUint(r.URL.Query().Get("account_id"), 10, 64)
 	if err != nil || accountID == 0 {
 		http.Error(w, "account_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, accountID) {
 		return
 	}
 
@@ -93,6 +124,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if input.PurchaseDate == "" {
 		http.Error(w, "purchase_date is required", http.StatusBadRequest)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, input.AccountID) {
 		return
 	}
 
@@ -170,6 +205,27 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existingAccountID, err := h.repo.AccountIDOf(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "purchase not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to update purchase", http.StatusInternalServerError)
+		return
+	}
+
+	// Vérifie l'accès au compte actuel de l'achat ET, si l'utilisateur essaie
+	// de le déplacer vers un autre compte, l'accès à ce nouveau compte aussi.
+	if !h.checkAccountAccess(w, r, existingAccountID) {
+		return
+	}
+
+	if input.AccountID != existingAccountID && !h.checkAccountAccess(w, r, input.AccountID) {
+		return
+	}
+
 	updatedPurchase, err := h.repo.Update(r.Context(), id, input)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -196,6 +252,21 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := purchaseIDFromPath(r.URL.Path)
 	if err != nil {
 		http.Error(w, "invalid purchase id", http.StatusBadRequest)
+		return
+	}
+
+	existingAccountID, err := h.repo.AccountIDOf(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "purchase not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to delete purchase", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, existingAccountID) {
 		return
 	}
 

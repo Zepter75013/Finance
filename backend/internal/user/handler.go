@@ -61,11 +61,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Username  string `json:"username"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		AvatarURL string `json:"avatar_url"`
-		Password  string `json:"password"`
+		Username   string    `json:"username"`
+		FirstName  string    `json:"first_name"`
+		LastName   string    `json:"last_name"`
+		AvatarURL  string    `json:"avatar_url"`
+		Password   string    `json:"password"`
+		AccountIDs *[]uint64 `json:"account_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -112,7 +113,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.repo.Create(r.Context(), payload.Username, payload.FirstName, payload.LastName, avatarURL, string(hash))
+	created, err := h.repo.Create(r.Context(), payload.Username, payload.FirstName, payload.LastName, avatarURL, string(hash), payload.AccountIDs)
 	if err != nil {
 		http.Error(w, "échec de la création", http.StatusInternalServerError)
 		return
@@ -138,10 +139,11 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Username  string `json:"username"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		AvatarURL string `json:"avatar_url"`
+		Username   string    `json:"username"`
+		FirstName  string    `json:"first_name"`
+		LastName   string    `json:"last_name"`
+		AvatarURL  string    `json:"avatar_url"`
+		AccountIDs *[]uint64 `json:"account_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -177,7 +179,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.repo.Update(r.Context(), id, payload.Username, payload.FirstName, payload.LastName, avatarURL)
+	updated, err := h.repo.Update(r.Context(), id, payload.Username, payload.FirstName, payload.LastName, avatarURL, payload.AccountIDs)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "utilisateur introuvable", http.StatusNotFound)

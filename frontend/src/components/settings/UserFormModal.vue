@@ -1,7 +1,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { createUser, updateUser } from '../../services/users'
 import { resizeAvatarFile } from '../../utils/avatar'
+import { usePurchasesStore } from '../../stores/purchases'
+
+const { accountsList } = storeToRefs(usePurchasesStore())
 
 const props = defineProps({
   modelValue: {
@@ -25,6 +29,8 @@ const initialForm = () => ({
   avatarUrl: props.user?.avatar_url ?? '',
   password: '',
   confirmPassword: '',
+  isAccountRestricted: Array.isArray(props.user?.account_ids),
+  accountIds: Array.isArray(props.user?.account_ids) ? [...props.user.account_ids] : [],
 })
 
 const form = reactive(initialForm())
@@ -65,6 +71,15 @@ async function handlePhotoChange(event) {
 function removePhoto() {
   form.avatarUrl = ''
   photoError.value = ''
+}
+
+function toggleAccount(accountId) {
+  const index = form.accountIds.indexOf(accountId)
+  if (index === -1) {
+    form.accountIds.push(accountId)
+  } else {
+    form.accountIds.splice(index, 1)
+  }
 }
 
 watch(
@@ -115,6 +130,8 @@ async function submitForm() {
 
   isSubmitting.value = true
 
+  const accountIds = form.isAccountRestricted ? [...form.accountIds] : null
+
   try {
     let saved
 
@@ -124,6 +141,7 @@ async function submitForm() {
         first_name: firstName,
         last_name: lastName,
         avatar_url: form.avatarUrl,
+        account_ids: accountIds,
       })
     } else {
       saved = await createUser({
@@ -132,6 +150,7 @@ async function submitForm() {
         last_name: lastName,
         avatar_url: form.avatarUrl,
         password: form.password,
+        account_ids: accountIds,
       })
     }
 
@@ -226,6 +245,34 @@ async function submitForm() {
             autocomplete="off"
           />
         </label>
+
+        <div class="accounts-field">
+          <label class="accounts-toggle">
+            <input type="checkbox" v-model="form.isAccountRestricted" />
+            <span>Restreindre l'accès à certains comptes</span>
+          </label>
+
+          <p class="accounts-hint">
+            Non coché : cet utilisateur voit tous les comptes, y compris ceux créés plus tard.
+          </p>
+
+          <div v-if="form.isAccountRestricted" class="accounts-checklist">
+            <label
+              v-for="account in accountsList"
+              :key="account.id"
+              class="accounts-checklist-item"
+            >
+              <input
+                type="checkbox"
+                :checked="form.accountIds.includes(account.id)"
+                @change="toggleAccount(account.id)"
+              />
+              <span>{{ account.name }}</span>
+            </label>
+
+            <p v-if="!accountsList.length" class="accounts-hint">Aucun compte disponible.</p>
+          </div>
+        </div>
 
         <template v-if="!isEditMode">
           <label class="form-field">
@@ -416,6 +463,45 @@ async function submitForm() {
   color: var(--negative-text);
   border: 1px solid rgba(239, 68, 68, 0.18);
   font-size: 0.92rem;
+}
+
+.accounts-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.accounts-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-soft, #b3bbc4);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accounts-hint {
+  margin: 0;
+  color: var(--text-dim, #8a939d);
+  font-size: 0.82rem;
+}
+
+.accounts-checklist {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(var(--tint-rgb), 0.035);
+  border: 1px solid rgba(var(--tint-rgb), 0.07);
+}
+
+.accounts-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text, #eef1f3);
+  font-size: 0.92rem;
+  cursor: pointer;
 }
 
 .modal-actions {

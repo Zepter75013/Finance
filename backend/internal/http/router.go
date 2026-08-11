@@ -37,19 +37,19 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, error) {
 	accountHandler := account.NewHandler(accountRepo)
 
 	categoryRepo := category.NewRepository(db)
-	categoryHandler := category.NewHandler(categoryRepo)
+	categoryHandler := category.NewHandler(categoryRepo, accountRepo)
 
 	subCategoryRepo := subcategory.NewRepository(db)
-	subCategoryHandler := subcategory.NewHandler(subCategoryRepo)
+	subCategoryHandler := subcategory.NewHandler(subCategoryRepo, accountRepo)
 
 	purchaseRepo := purchase.NewRepository(db)
-	purchaseHandler := purchase.NewHandler(purchaseRepo)
+	purchaseHandler := purchase.NewHandler(purchaseRepo, accountRepo)
 
 	incomeRepo := incomes.NewRepository(db)
-	incomeHandler := incomes.NewHandler(incomeRepo)
+	incomeHandler := incomes.NewHandler(incomeRepo, accountRepo)
 
 	statementRepo := statement.NewRepository(db)
-	statementHandler := statement.NewHandler(statementRepo, cfg.StatementPdfDir)
+	statementHandler := statement.NewHandler(statementRepo, cfg.StatementPdfDir, accountRepo)
 
 	reportService, err := report.NewService(cfg.ReportDir)
 	if err != nil {

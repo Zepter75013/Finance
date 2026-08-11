@@ -13,17 +13,44 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"finance/backend/internal/account"
+	"finance/backend/internal/authctx"
 )
 
 const maxPdfUploadBytes = 30 << 20 // 30 MB
 
 type Handler struct {
-	repo   *Repository
-	pdfDir string
+	repo        *Repository
+	pdfDir      string
+	accountRepo *account.Repository
 }
 
-func NewHandler(repo *Repository, pdfDir string) *Handler {
-	return &Handler{repo: repo, pdfDir: pdfDir}
+func NewHandler(repo *Repository, pdfDir string, accountRepo *account.Repository) *Handler {
+	return &Handler{repo: repo, pdfDir: pdfDir, accountRepo: accountRepo}
+}
+
+// checkAccountAccess renvoie false (et écrit déjà la réponse 403) si
+// l'utilisateur courant n'a pas le droit d'agir sur accountID.
+func (h *Handler) checkAccountAccess(w http.ResponseWriter, r *http.Request, accountID uint64) bool {
+	userID, ok := authctx.UserID(r.Context())
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+
+	allowed, err := h.accountRepo.UserCanAccess(r.Context(), userID, accountID)
+	if err != nil {
+		http.Error(w, "échec de la vérification des droits", http.StatusInternalServerError)
+		return false
+	}
+
+	if !allowed {
+		http.Error(w, "vous n'avez pas accès à ce compte", http.StatusForbidden)
+		return false
+	}
+
+	return true
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +62,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	accountID, err := strconv.ParseUint(r.URL.Query().Get("account_id"), 10, 64)
 	if err != nil || accountID == 0 {
 		http.Error(w, "account_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, accountID) {
 		return
 	}
 
@@ -78,6 +109,10 @@ func (h *Handler) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkAccountAccess(w, r, input.AccountID) {
+		return
+	}
+
 	saved, err := h.repo.Upsert(r.Context(), input)
 	if err != nil {
 		if err == ErrStatementLocked {
@@ -116,6 +151,21 @@ func (h *Handler) SetLocked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "relevé introuvable", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "échec de la mise à jour du relevé", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, existing.AccountID) {
+		return
+	}
+
 	updated, err := h.repo.SetLocked(r.Context(), id, input.IsLocked)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -142,6 +192,21 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := statementIDFromPath(r.URL.Path)
 	if err != nil {
 		http.Error(w, "invalid statement id", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "relevé introuvable", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to delete statement", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.checkAccountAccess(w, r, existing.AccountID) {
 		return
 	}
 

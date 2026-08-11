@@ -1,38 +1,11 @@
 <script setup>
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import {
-  Chart as ChartJS,
-  Title,
-  Tooltip,
-  Legend,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  BarController,
-  LineController,
-  PieController,
-} from 'chart.js'
-import { Chart, Pie } from 'vue-chartjs'
+import { Chart as ChartJS, Title, Tooltip, Legend, ArcElement, PieController } from 'chart.js'
+import { Pie } from 'vue-chartjs'
 import { usePurchasesStore } from '../../stores/purchases'
 
-ChartJS.register(
-  Title,
-  Tooltip,
-  Legend,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  BarController,
-  LineController,
-  PieController
-)
+ChartJS.register(Title, Tooltip, Legend, ArcElement, PieController)
 
 const props = defineProps({
   selectedYear: {
@@ -55,35 +28,6 @@ const MAX_VISIBLE_SLICES = 5
 const store = usePurchasesStore()
 const { purchases, incomes } = storeToRefs(store)
 
-function monthKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
-function formatMonthLabel(date) {
-  const formatted = new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(date)
-  return formatted.replace('.', '').charAt(0).toUpperCase() + formatted.replace('.', '').slice(1)
-}
-
-function formatFullMonthLabel(date) {
-  const formatted = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(date)
-  return formatted.charAt(0).toUpperCase() + formatted.slice(1)
-}
-
-const monthWindow = computed(() => {
-  const months = []
-
-  for (let month = 0; month < 12; month += 1) {
-    const date = new Date(props.selectedYear, month, 1)
-    months.push({
-      key: monthKey(date),
-      label: formatMonthLabel(date),
-      fullLabel: formatFullMonthLabel(date),
-    })
-  }
-
-  return months
-})
-
 function formatCurrency(value) {
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
@@ -92,38 +36,6 @@ function formatCurrency(value) {
     maximumFractionDigits: 0,
   }).format(Number(value || 0))
 }
-
-const trendData = computed(() => {
-  const spendingByMonth = new Map()
-  const incomeByMonth = new Map()
-
-  for (const purchase of purchases.value) {
-    if (!purchase?.date) continue
-    const date = new Date(purchase.date)
-    if (Number.isNaN(date.getTime())) continue
-    const key = monthKey(date)
-    spendingByMonth.set(key, (spendingByMonth.get(key) || 0) + Number(purchase.amount || 0))
-  }
-
-  for (const income of incomes.value) {
-    if (!income?.income_date) continue
-    const date = new Date(income.income_date)
-    if (Number.isNaN(date.getTime())) continue
-    const key = monthKey(date)
-    incomeByMonth.set(key, (incomeByMonth.get(key) || 0) + Number(income.amount || 0))
-  }
-
-  const labels = monthWindow.value.map((month) => month.label)
-  const spending = monthWindow.value.map((month) => spendingByMonth.get(month.key) || 0)
-  const income = monthWindow.value.map((month) => incomeByMonth.get(month.key) || 0)
-  const net = spending.map((value, index) => income[index] - value)
-
-  return { labels, spending, income, net }
-})
-
-const hasTrendData = computed(() => {
-  return trendData.value.spending.some((value) => value > 0) || trendData.value.income.some((value) => value > 0)
-})
 
 function buildBreakdown(items, amountOf, keyOf) {
   const totals = new Map()
@@ -160,98 +72,6 @@ const sourceBreakdown = computed(() =>
 
 const hasCategoryData = computed(() => categoryBreakdown.value.length > 0)
 const hasSourceData = computed(() => sourceBreakdown.value.length > 0)
-
-const trendChartData = computed(() => ({
-  labels: trendData.value.labels,
-  datasets: [
-    {
-      type: 'bar',
-      label: 'Dépenses',
-      data: trendData.value.spending,
-      backgroundColor: 'rgba(141, 116, 116, 0.55)',
-      borderColor: 'rgb(141, 116, 116)',
-      borderRadius: 8,
-      order: 2,
-    },
-    {
-      type: 'bar',
-      label: 'Revenus',
-      data: trendData.value.income,
-      backgroundColor: 'rgba(129, 155, 141, 0.55)',
-      borderColor: 'rgb(129, 155, 141)',
-      borderRadius: 8,
-      order: 2,
-    },
-    {
-      type: 'line',
-      label: 'Solde net',
-      data: trendData.value.net,
-      borderColor: '#d7ddd8',
-      backgroundColor: '#d7ddd8',
-      tension: 0.35,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderWidth: 2,
-      order: 1,
-      yAxisID: 'y',
-    },
-  ],
-}))
-
-const trendChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: 'index', intersect: false },
-  plugins: {
-    legend: {
-      position: 'bottom',
-      labels: {
-        color: '#c1cbd1',
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 14,
-        boxWidth: 9,
-        boxHeight: 9,
-      },
-    },
-    tooltip: {
-      backgroundColor: 'rgba(10, 13, 18, 0.96)',
-      borderColor: 'rgba(var(--tint-rgb), 0.08)',
-      borderWidth: 1,
-      padding: 12,
-      callbacks: {
-        title(items) {
-          const index = items[0]?.dataIndex
-          return monthWindow.value[index]?.fullLabel ?? items[0]?.label ?? ''
-        },
-        label(context) {
-          return `${context.dataset.label} : ${formatCurrency(context.raw)}`
-        },
-        labelColor(context) {
-          const color = context.dataset.borderColor || context.dataset.backgroundColor
-          return {
-            borderColor: color,
-            backgroundColor: color,
-          }
-        },
-      },
-    },
-  },
-  scales: {
-    x: {
-      ticks: { color: '#99a5ae', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
-      grid: { display: false },
-      border: { display: false },
-    },
-    y: {
-      beginAtZero: true,
-      grace: '15%',
-      ticks: { color: '#99a5ae', callback: (value) => formatCurrency(value) },
-      grid: { color: 'rgba(var(--tint-rgb), 0.055)' },
-      border: { display: false },
-    },
-  },
-}
 
 function buildPieData(entries) {
   return {
@@ -313,23 +133,6 @@ const sourceLegend = computed(() => buildLegendEntries(sourceBreakdown.value))
 
 <template>
   <section class="dashboard-charts">
-    <article class="panel trend-card">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Tendance</p>
-          <h2>Dépenses vs revenus ({{ props.selectedYear }})</h2>
-        </div>
-      </div>
-
-      <div v-if="hasTrendData" class="chart-box chart-box-trend">
-        <Chart type="bar" :data="trendChartData" :options="trendChartOptions" />
-      </div>
-
-      <div v-else class="empty-chart-state">
-        <p>Pas encore assez de données pour afficher une tendance.</p>
-      </div>
-    </article>
-
     <div class="breakdown-grid">
       <article class="panel breakdown-card">
         <div class="panel-header">
@@ -408,7 +211,6 @@ const sourceLegend = computed(() => buildLegendEntries(sourceBreakdown.value))
   gap: 0.7rem;
 }
 
-.trend-card,
 .breakdown-card {
   padding: 0.95rem;
 }
@@ -423,10 +225,6 @@ const sourceLegend = computed(() => buildLegendEntries(sourceBreakdown.value))
   position: relative;
   width: 100%;
   margin-top: 0.75rem;
-}
-
-.chart-box-trend {
-  height: 240px;
 }
 
 .chart-box-pie3d {

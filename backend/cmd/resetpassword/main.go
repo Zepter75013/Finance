@@ -58,7 +58,7 @@ func main() {
 
 	account, err := repo.FindByUsername(ctx, *username)
 	if err == sql.ErrNoRows {
-		if _, err := repo.Create(ctx, *username, "", "", nil, string(hash)); err != nil {
+		if _, err := repo.Create(ctx, *username, "", "", nil, string(hash), nil); err != nil {
 			log.Fatalf("failed to create user: %v", err)
 		}
 

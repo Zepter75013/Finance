@@ -153,6 +153,39 @@ func (r *Repository) Update(ctx context.Context, id uint64, name string) (SubCat
 	return r.FindByID(ctx, id)
 }
 
+// AccountIDOfCategory résout le compte d'une catégorie — utilisé pour
+// vérifier les droits d'accès sur Create, qui ne reçoit que category_id.
+func (r *Repository) AccountIDOfCategory(ctx context.Context, categoryID uint64) (uint64, error) {
+	var accountID uint64
+
+	err := r.db.QueryRowContext(ctx, `SELECT account_id FROM categories WHERE id = ?`, categoryID).Scan(&accountID)
+	if err != nil {
+		return 0, err
+	}
+
+	return accountID, nil
+}
+
+// AccountIDOf résout le compte d'une sous-catégorie existante (via sa
+// catégorie) — utilisé pour vérifier les droits d'accès sur Update/Delete.
+func (r *Repository) AccountIDOf(ctx context.Context, id uint64) (uint64, error) {
+	var accountID uint64
+
+	query := `
+		SELECT c.account_id
+		FROM sub_categories sc
+		JOIN categories c ON c.id = sc.category_id
+		WHERE sc.id = ?
+	`
+
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&accountID)
+	if err != nil {
+		return 0, err
+	}
+
+	return accountID, nil
+}
+
 func (r *Repository) Delete(ctx context.Context, id uint64) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM sub_categories WHERE id = ?`, id)
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"finance/backend/internal/authctx"
 )
 
 type Handler struct {
@@ -22,7 +24,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accounts, err := h.repo.List(r.Context())
+	userID, _ := authctx.UserID(r.Context())
+
+	accounts, err := h.repo.List(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load accounts", http.StatusInternalServerError)
 		return

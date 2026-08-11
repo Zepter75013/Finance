@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"finance/backend/internal/auth"
+	"finance/backend/internal/authctx"
 )
 
 func withCORS(frontendURL string, next http.Handler) http.Handler {
@@ -35,10 +36,13 @@ func requireAuth(sessions *auth.Repository, next http.HandlerFunc) http.HandlerF
 			return
 		}
 
-		if _, err := sessions.FindValidSession(r.Context(), cookie.Value); err != nil {
+		session, err := sessions.FindValidSession(r.Context(), cookie.Value)
+		if err != nil {
 			http.Error(w, "non authentifié", http.StatusUnauthorized)
 			return
 		}
+
+		r = r.WithContext(authctx.WithUserID(r.Context(), session.UserID))
 
 		next.ServeHTTP(w, r)
 	}

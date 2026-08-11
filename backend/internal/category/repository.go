@@ -136,6 +136,20 @@ func (r *Repository) Update(ctx context.Context, id uint64, name string, categor
 	return category, nil
 }
 
+// AccountIDOf résout le compte d'une catégorie existante — utilisé pour
+// vérifier les droits d'accès sur Update/Delete, qui ne reçoivent pas
+// account_id dans leur requête (contrairement à Create).
+func (r *Repository) AccountIDOf(ctx context.Context, id uint64) (uint64, error) {
+	var accountID uint64
+
+	err := r.db.QueryRowContext(ctx, `SELECT account_id FROM categories WHERE id = ?`, id).Scan(&accountID)
+	if err != nil {
+		return 0, err
+	}
+
+	return accountID, nil
+}
+
 func (r *Repository) Delete(ctx context.Context, id uint64) error {
 	query := `
 		DELETE FROM categories

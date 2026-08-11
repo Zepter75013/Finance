@@ -105,6 +105,7 @@ var sqliteSchemaStatements = []string{
 		last_name TEXT NOT NULL DEFAULT '',
 		avatar_url TEXT,
 		password_hash TEXT NOT NULL,
+		accounts_restricted INTEGER NOT NULL DEFAULT 0,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
@@ -123,6 +124,16 @@ var sqliteSchemaStatements = []string{
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_reset_codes_user ON password_reset_codes (user_id)`,
+	// Aucune ligne pour un utilisateur donné signifie "accès à tous les
+	// comptes" (rétrocompatible) ; la restriction n'entre en vigueur que
+	// lorsque des lignes explicites existent pour lui.
+	`CREATE TABLE IF NOT EXISTS user_accounts (
+		user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+		account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (user_id, account_id)
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_user_accounts_account ON user_accounts (account_id)`,
 	// Un compte par défaut est indispensable : achats/revenus/catégories
 	// exigent tous un account_id, l'app serait inutilisable sans au moins un
 	// compte existant dès le premier démarrage sur une base vierge.

@@ -44,14 +44,20 @@ const selectColumnsWithStats = `
 	(SELECT COUNT(*) FROM categories c WHERE c.account_id = a.id) AS category_count
 `
 
-func (r *Repository) List(ctx context.Context) ([]Account, error) {
+// List renvoie les comptes visibles par userID : tous les comptes si cet
+// utilisateur n'a jamais été restreint (users.accounts_restricted = 0),
+// sinon uniquement ceux qui lui sont explicitement assignés dans
+// user_accounts (potentiellement aucun).
+func (r *Repository) List(ctx context.Context, userID uint64) ([]Account, error) {
 	query := `
 		SELECT ` + selectColumnsWithStats + `
 		FROM accounts a
+		WHERE (SELECT accounts_restricted FROM users WHERE id = ?) = 0
+		   OR EXISTS (SELECT 1 FROM user_accounts ua WHERE ua.user_id = ? AND ua.account_id = a.id)
 		ORDER BY a.name ASC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, userID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +88,23 @@ func (r *Repository) List(ctx context.Context) ([]Account, error) {
 	}
 
 	return accounts, nil
+}
+
+// UserCanAccess indique si userID peut agir sur accountID : vrai si cet
+// utilisateur n'a jamais été restreint (users.accounts_restricted = 0), ou
+// s'il a explicitement ce compte parmi les siens.
+func (r *Repository) UserCanAccess(ctx context.Context, userID, accountID uint64) (bool, error) {
+	query := `
+		SELECT (SELECT accounts_restricted FROM users WHERE id = ?) = 0
+		    OR EXISTS (SELECT 1 FROM user_accounts WHERE user_id = ? AND account_id = ?)
+	`
+
+	var allowed bool
+	if err := r.db.QueryRowContext(ctx, query, userID, userID, accountID).Scan(&allowed); err != nil {
+		return false, err
+	}
+
+	return allowed, nil
 }
 
 func (r *Repository) Create(ctx context.Context, name string) (Account, error) {

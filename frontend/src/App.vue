@@ -10,6 +10,7 @@ import LoginView from './components/auth/LoginView.vue'
 import ChangePasswordModal from './components/auth/ChangePasswordModal.vue'
 import AboutModal from './components/Common/AboutModal.vue'
 import DashboardView from './components/dashboard/DashboardView.vue'
+import MonthlyOverviewView from './components/dashboard/MonthlyOverviewView.vue'
 import PurchasesView from './components/dashboard/PurchasesView.vue'
 import PurchaseFormModal from './components/dashboard/PurchaseFormModal.vue'
 import DeletePurchaseModal from './components/dashboard/DeletePurchaseModal.vue'
@@ -513,6 +514,8 @@ function handleBulkDeleted(result) {
         <PreferencesView v-else-if="activeView === 'preferences'" />
 
         <DashboardView v-else-if="activeView === 'dashboard'" />
+
+        <MonthlyOverviewView v-else-if="activeView === 'monthly'" />
 
         <template v-else>
           <section
