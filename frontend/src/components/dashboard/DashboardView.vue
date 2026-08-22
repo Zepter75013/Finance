@@ -17,6 +17,8 @@ const {
   currentMonthExpenseBudget,
   currentMonthExpenseSpent,
   accountsList,
+  realCurrentBalance,
+  latestLockedStatement,
 } = storeToRefs(store)
 
 const budgetUsedPercent = computed(() => {
@@ -168,7 +170,9 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
         <strong>{{ formatCurrency(yearNetBalance) }}</strong>
         <p>{{ yearNetBalance >= 0 ? 'Solde positif' : 'Solde négatif' }}</p>
       </article>
+    </section>
 
+    <section class="dashboard-current-grid">
       <article class="panel stat-card accent-line stat-card-ring">
         <CircularProgress
           :percent="budgetUsedPercent"
@@ -181,6 +185,18 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
           <strong>{{ formatCurrency(currentMonthBudgetRemaining) }}</strong>
           <p>{{ currentMonthBudgetRemaining >= 0 ? 'Budget encore disponible' : 'Budget dépassé' }}</p>
         </div>
+      </article>
+
+      <article class="panel stat-card">
+        <span>Solde réel (dernier relevé + non pointé)</span>
+        <template v-if="latestLockedStatement">
+          <strong>{{ formatCurrency(realCurrentBalance) }}</strong>
+          <p>D’après le relevé n°{{ latestLockedStatement.reference }}, hors budget</p>
+        </template>
+        <template v-else>
+          <strong>—</strong>
+          <p>Verrouille un premier relevé dans Pointage pour l’afficher</p>
+        </template>
       </article>
     </section>
 
@@ -219,7 +235,13 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
 
 .dashboard-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.dashboard-current-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
 }
 
@@ -300,7 +322,8 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
 }
 
 @media (max-width: 720px) {
-  .dashboard-stats-grid {
+  .dashboard-stats-grid,
+  .dashboard-current-grid {
     grid-template-columns: 1fr;
   }
 }

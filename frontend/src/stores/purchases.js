@@ -28,6 +28,7 @@ import {
   updateAccount as updateAccountApi,
   deleteAccount as deleteAccountApi,
 } from '../services/accounts'
+import { fetchStatements } from '../services/statements'
 
 export const usePurchasesStore = defineStore('purchases', () => {
   const purchases = ref([])
@@ -35,6 +36,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
   const categoriesList = ref([])
   const subCategoriesList = ref([])
   const accountsList = ref([])
+  const statements = ref([])
 
   // Compte "actif" : celui qui pré-remplit le champ compte lorsqu'on saisit
   // un nouvel achat/revenu ou qu'on importe un fichier, pour ne pas avoir à
@@ -454,6 +456,39 @@ export const usePurchasesStore = defineStore('purchases', () => {
     () => currentMonthExpenseBudget.value - currentMonthExpenseSpent.value
   )
 
+  // Le dernier relevé VERROUILLÉ (et non simplement le plus récent, qui
+  // pourrait être un brouillon en cours de saisie) sert d'ancrage fiable —
+  // c'est un solde bancaire confirmé, pas une estimation.
+  const latestLockedStatement = computed(() => {
+    const locked = statements.value.filter((statement) => statement.is_locked)
+    if (!locked.length) return null
+
+    return [...locked].sort((a, b) => {
+      const dateA = new Date(a.period_end || a.statement_date || 0)
+      const dateB = new Date(b.period_end || b.statement_date || 0)
+      return dateB - dateA
+    })[0]
+  })
+
+  // Solde réel = solde de fin du dernier relevé verrouillé + tous les achats/
+  // revenus pas encore rattachés à un relevé (statementReference vide) — ce
+  // sont les mouvements que la banque a déjà comptabilisés mais que le
+  // pointage personnel n'a pas encore rapprochés d'un relevé précis.
+  const realCurrentBalance = computed(() => {
+    const anchor = latestLockedStatement.value
+    if (!anchor) return null
+
+    const unreconciledIncome = incomes.value
+      .filter((income) => !income.statementReference)
+      .reduce((sum, income) => sum + Number(income.amount || 0), 0)
+
+    const unreconciledExpense = purchases.value
+      .filter((purchase) => !purchase.statementReference)
+      .reduce((sum, purchase) => sum + Number(purchase.amount || 0), 0)
+
+    return Number(anchor.end_balance || 0) + unreconciledIncome - unreconciledExpense
+  })
+
   async function loadCategories() {
     if (!activeAccountId.value) {
       categoriesList.value = []
@@ -507,6 +542,22 @@ export const usePurchasesStore = defineStore('purchases', () => {
     purchases.value = data.map(mapPurchaseFromApi)
   }
 
+  // Chargé pour calculer le solde réel (dernier relevé verrouillé + achats/
+  // revenus pas encore rattachés à un relevé) — pas d'échec bloquant : le
+  // dashboard doit rester utilisable même si les relevés ne se chargent pas.
+  async function loadStatements() {
+    if (!activeAccountId.value) {
+      statements.value = []
+      return
+    }
+
+    try {
+      statements.value = await fetchStatements(activeAccountId.value)
+    } catch {
+      statements.value = []
+    }
+  }
+
   // Chaque compte a ses propres achats, revenus et catégories — bascule
   // complète des trois à chaque changement de compte actif (bootstrap initial
   // ET changement ultérieur via le sélecteur), pour que le dashboard, le
@@ -520,6 +571,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
       await loadCategories()
       await loadIncomes()
       await loadPurchasesForActiveAccount()
+      await loadStatements()
       activeCategory.value = 'Toutes'
       selectedPurchaseId.value = purchases.value[0]?.id ?? null
     } catch (err) {
@@ -991,6 +1043,9 @@ export const usePurchasesStore = defineStore('purchases', () => {
     currentMonthExpenseBudget,
     currentMonthExpenseSpent,
     currentMonthBudgetRemaining,
+    statements,
+    latestLockedStatement,
+    realCurrentBalance,
     suggestedCategoryBudget,
     currentMonthCategoryBudget,
     loadCategories,
