@@ -29,6 +29,7 @@ import {
   deleteAccount as deleteAccountApi,
 } from '../services/accounts'
 import { fetchStatements } from '../services/statements'
+import { fetchBudgets, upsertBudget, deleteBudget } from '../services/budgets'
 import { findLatestLockedStatement, computeRealBalance } from '../utils/realBalance'
 
 export const usePurchasesStore = defineStore('purchases', () => {
@@ -65,9 +66,10 @@ export const usePurchasesStore = defineStore('purchases', () => {
   const activeCategory = ref('Toutes')
   const selectedPurchaseId = ref(null)
 
-  const categoryBudgetOverrides = ref(
-    JSON.parse(localStorage.getItem('categoryBudgetOverrides') || '{}')
-  )
+  // Peuplé depuis le serveur par loadBudgetOverrides() (voir plus bas) — ne
+  // vit plus dans localStorage, pour que le planificateur d'email backend
+  // puisse calculer les mêmes budgets que cet écran.
+  const categoryBudgetOverrides = ref({})
 
   const isLoading = ref(false)
   const error = ref('')
@@ -545,6 +547,31 @@ export const usePurchasesStore = defineStore('purchases', () => {
     }
   }
 
+  // Charge les budgets ajustés du mois courant depuis le serveur — pas
+  // d'échec bloquant, même raison que loadStatements ci-dessus. L'API
+  // renvoie une map category_id -> montant (clés JSON en chaîne) ;
+  // reconstruite ici sous la forme `${monthKey}:${categoryId}` déjà utilisée
+  // partout ailleurs dans ce store.
+  async function loadBudgetOverrides() {
+    if (!activeAccountId.value) {
+      categoryBudgetOverrides.value = {}
+      return
+    }
+
+    try {
+      const data = await fetchBudgets(activeAccountId.value, currentMonthKey)
+      const next = {}
+
+      for (const [categoryId, amount] of Object.entries(data || {})) {
+        next[`${currentMonthKey}:${categoryId}`] = Number(amount)
+      }
+
+      categoryBudgetOverrides.value = next
+    } catch {
+      categoryBudgetOverrides.value = {}
+    }
+  }
+
   // Chaque compte a ses propres achats, revenus et catégories — bascule
   // complète des trois à chaque changement de compte actif (bootstrap initial
   // ET changement ultérieur via le sélecteur), pour que le dashboard, le
@@ -559,6 +586,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
       await loadIncomes()
       await loadPurchasesForActiveAccount()
       await loadStatements()
+      await loadBudgetOverrides()
       activeCategory.value = 'Toutes'
       selectedPurchaseId.value = purchases.value[0]?.id ?? null
     } catch (err) {
@@ -969,28 +997,30 @@ export const usePurchasesStore = defineStore('purchases', () => {
     return `${monthKey}:${categoryId}` in categoryBudgetOverrides.value
   }
 
-  function setCategoryBudgetOverride(categoryId, monthKey, value) {
+  async function setCategoryBudgetOverride(categoryId, monthKey, value) {
     const amount = Number(value)
 
     if (!Number.isFinite(amount) || amount < 0) {
       throw new Error('Le budget doit être un montant positif ou nul.')
     }
 
+    await upsertBudget(categoryId, monthKey, amount)
+
     const key = `${monthKey}:${categoryId}`
     categoryBudgetOverrides.value = { ...categoryBudgetOverrides.value, [key]: amount }
-    localStorage.setItem('categoryBudgetOverrides', JSON.stringify(categoryBudgetOverrides.value))
   }
 
-  function clearCategoryBudgetOverride(categoryId, monthKey) {
+  async function clearCategoryBudgetOverride(categoryId, monthKey) {
     const key = `${monthKey}:${categoryId}`
 
     if (!(key in categoryBudgetOverrides.value)) return
+
+    await deleteBudget(categoryId, monthKey)
 
     const next = { ...categoryBudgetOverrides.value }
     delete next[key]
 
     categoryBudgetOverrides.value = next
-    localStorage.setItem('categoryBudgetOverrides', JSON.stringify(next))
   }
 
   function setActiveCategory(category) {

@@ -188,16 +188,20 @@ function handleAdjustCategoryBudget(category) {
   isBudgetModalOpen.value = true
 }
 
-function handleClearCategoryBudget(category) {
-  purchasesStore.clearCategoryBudgetOverride(category.id, currentMonthKey)
+async function handleClearCategoryBudget(category) {
+  try {
+    await purchasesStore.clearCategoryBudgetOverride(category.id, currentMonthKey)
+  } catch (err) {
+    budgetModalError.value = err instanceof Error ? err.message : 'Impossible de réinitialiser ce budget.'
+  }
 }
 
-function submitBudgetModal(rawValue) {
+async function submitBudgetModal(rawValue) {
   budgetModalError.value = ''
   const normalized = rawValue.replace(',', '.').trim()
 
   try {
-    purchasesStore.setCategoryBudgetOverride(budgetModalCategory.value.id, currentMonthKey, normalized)
+    await purchasesStore.setCategoryBudgetOverride(budgetModalCategory.value.id, currentMonthKey, normalized)
     isBudgetModalOpen.value = false
   } catch (err) {
     budgetModalError.value = err instanceof Error ? err.message : 'Montant invalide.'

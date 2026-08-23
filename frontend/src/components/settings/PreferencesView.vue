@@ -5,6 +5,7 @@ import PageHero from '../Common/PageHero.vue'
 import RestoreBackupModal from './RestoreBackupModal.vue'
 import { useThemeStore } from '../../stores/theme'
 import { usePreferencesStore } from '../../stores/preferences'
+import { useAuthStore } from '../../stores/auth'
 import {
   fetchBackups,
   createBackup,
@@ -33,6 +34,29 @@ function selectTheme(value) {
 
 const preferencesStore = usePreferencesStore()
 const { currencyCode, currencyPosition, numberFormatStyle, dateFormatStyle } = storeToRefs(preferencesStore)
+
+const authStore = useAuthStore()
+const emailAlertsInput = ref(authStore.emailAlertsEnabled)
+const isSavingEmailAlerts = ref(false)
+const emailAlertsError = ref('')
+const emailAlertsSuccess = ref('')
+
+async function handleSaveEmailAlerts() {
+  if (isSavingEmailAlerts.value) return
+
+  isSavingEmailAlerts.value = true
+  emailAlertsError.value = ''
+  emailAlertsSuccess.value = ''
+
+  try {
+    await authStore.setEmailAlertsEnabled(emailAlertsInput.value)
+    emailAlertsSuccess.value = 'Préférence mise à jour.'
+  } catch (err) {
+    emailAlertsError.value = err instanceof Error ? err.message : 'Impossible de mettre à jour cette préférence.'
+  } finally {
+    isSavingEmailAlerts.value = false
+  }
+}
 
 const CURRENCY_OPTIONS = [
   { value: 'EUR', label: 'Euro — €' },
@@ -419,6 +443,32 @@ onMounted(() => {
           </select>
         </label>
       </div>
+    </section>
+
+    <section class="panel preferences-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Notifications</p>
+          <h2>Alertes par email</h2>
+        </div>
+      </div>
+
+      <p v-if="emailAlertsError" class="form-error">{{ emailAlertsError }}</p>
+      <p v-if="emailAlertsSuccess" class="form-success">{{ emailAlertsSuccess }}</p>
+
+      <label class="backup-auto-toggle">
+        <input type="checkbox" v-model="emailAlertsInput" />
+        <span>Recevoir un résumé quotidien par email (budgets dépassés, échéances à venir)</span>
+      </label>
+
+      <button
+        class="ghost-btn"
+        type="button"
+        :disabled="isSavingEmailAlerts"
+        @click="handleSaveEmailAlerts"
+      >
+        {{ isSavingEmailAlerts ? 'Enregistrement...' : 'Enregistrer' }}
+      </button>
     </section>
 
     <section class="panel preferences-card">

@@ -5,6 +5,7 @@ import {
   logout as logoutApi,
   fetchCurrentUser,
   changePassword as changePasswordApi,
+  updateEmailAlertsPreference as updateEmailAlertsPreferenceApi,
 } from '../services/auth'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -12,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const username = ref('')
   const avatarUrl = ref('')
   const isAdmin = ref(false)
+  const emailAlertsEnabled = ref(true)
   const isAuthenticated = ref(false)
   const isCheckingSession = ref(true)
 
@@ -20,6 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
     username.value = account?.username ?? ''
     avatarUrl.value = account?.avatar_url ?? ''
     isAdmin.value = account?.is_admin ?? false
+    emailAlertsEnabled.value = account?.email_alerts_enabled ?? true
   }
 
   async function checkSession() {
@@ -59,6 +62,11 @@ export const useAuthStore = defineStore('auth', () => {
     await changePasswordApi(currentPassword, newPassword)
   }
 
+  async function setEmailAlertsEnabled(enabled) {
+    await updateEmailAlertsPreferenceApi(enabled)
+    emailAlertsEnabled.value = enabled
+  }
+
   // Updates the locally cached avatar without a round-trip to the server —
   // used right after the current user edits their own profile in Utilisateurs
   // so the sidebar reflects it instantly.
@@ -71,12 +79,14 @@ export const useAuthStore = defineStore('auth', () => {
     username,
     avatarUrl,
     isAdmin,
+    emailAlertsEnabled,
     isAuthenticated,
     isCheckingSession,
     checkSession,
     login,
     logout,
     changePassword,
+    setEmailAlertsEnabled,
     setAvatar,
   }
 })

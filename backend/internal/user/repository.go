@@ -24,6 +24,28 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// SetEmailAlertsEnabled bascule la préférence de résumé quotidien par email
+// d'un utilisateur — séparée de Update, qui gère déjà toute la logique
+// d'auto-édition vs droits admin ; ceci est une pure préférence personnelle
+// sans implication de privilège.
+func (r *Repository) SetEmailAlertsEnabled(ctx context.Context, userID uint64, enabled bool) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET email_alerts_enabled = ? WHERE id = ?`, enabled, userID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
 func (r *Repository) CountAdmins(ctx context.Context) (int, error) {
 	var count int
 
@@ -65,7 +87,7 @@ func (r *Repository) accountIDsOf(ctx context.Context, userID uint64) ([]uint64,
 
 func (r *Repository) List(ctx context.Context) ([]User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, email_alerts_enabled, created_at, updated_at
 		FROM users
 		ORDER BY username ASC
 	`
@@ -91,6 +113,7 @@ func (r *Repository) List(ctx context.Context) ([]User, error) {
 			&u.PasswordHash,
 			&restricted,
 			&u.IsAdmin,
+			&u.EmailAlertsEnabled,
 			&u.CreatedAt,
 			&u.UpdatedAt,
 		); err != nil {
@@ -136,7 +159,7 @@ func (r *Repository) Delete(ctx context.Context, id uint64) error {
 
 func (r *Repository) FindByUsername(ctx context.Context, username string) (User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, email_alerts_enabled, created_at, updated_at
 		FROM users
 		WHERE username = ?
 	`
@@ -153,6 +176,7 @@ func (r *Repository) FindByUsername(ctx context.Context, username string) (User,
 		&u.PasswordHash,
 		&restricted,
 		&u.IsAdmin,
+		&u.EmailAlertsEnabled,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)
@@ -295,7 +319,7 @@ func (r *Repository) UpdatePassword(ctx context.Context, id uint64, passwordHash
 
 func (r *Repository) FindByID(ctx context.Context, id uint64) (User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, email_alerts_enabled, created_at, updated_at
 		FROM users
 		WHERE id = ?
 	`
@@ -312,6 +336,7 @@ func (r *Repository) FindByID(ctx context.Context, id uint64) (User, error) {
 		&u.PasswordHash,
 		&restricted,
 		&u.IsAdmin,
+		&u.EmailAlertsEnabled,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)

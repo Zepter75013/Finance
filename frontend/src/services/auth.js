@@ -65,6 +65,23 @@ export async function changePassword(currentPassword, newPassword) {
   }
 }
 
+export async function updateEmailAlertsPreference(enabled) {
+  const response = await fetch(`${API_BASE_URL}/auth/email-alerts`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ enabled }),
+  })
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, 'Impossible de mettre à jour cette préférence.')
+    throw new Error(message)
+  }
+}
+
 export async function requestResetCode(username) {
   const response = await fetch(`${API_BASE_URL}/auth/request-reset-code`, {
     method: 'POST',

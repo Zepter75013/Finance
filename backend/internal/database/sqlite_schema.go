@@ -24,6 +24,15 @@ var sqliteSchemaStatements = []string{
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE (account_id, name)
 	)`,
+	`CREATE TABLE IF NOT EXISTS category_budgets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		category_id INTEGER NOT NULL REFERENCES categories (id) ON DELETE CASCADE,
+		month_key TEXT NOT NULL,
+		amount REAL NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE (category_id, month_key)
+	)`,
 	`CREATE TABLE IF NOT EXISTS sub_categories (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		category_id INTEGER NOT NULL REFERENCES categories (id) ON DELETE CASCADE,
@@ -107,6 +116,7 @@ var sqliteSchemaStatements = []string{
 		password_hash TEXT NOT NULL,
 		accounts_restricted INTEGER NOT NULL DEFAULT 0,
 		is_admin INTEGER NOT NULL DEFAULT 0,
+		email_alerts_enabled INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,

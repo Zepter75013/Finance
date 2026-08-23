@@ -10,6 +10,7 @@ import (
 	"finance/backend/internal/config"
 	"finance/backend/internal/database"
 	apphttp "finance/backend/internal/http"
+	"finance/backend/internal/notify"
 	"finance/backend/internal/recurring"
 	"finance/backend/internal/user"
 
@@ -54,6 +55,26 @@ func runBackupScheduler(backupService *backup.Service) {
 	}
 }
 
+// runDigestScheduler envoie le résumé quotidien par email s'il n'est pas
+// déjà parti aujourd'hui, une fois immédiatement puis toutes les heures —
+// même logique que les deux autres planificateurs.
+func runDigestScheduler(digestService *notify.Service) {
+	ctx := context.Background()
+
+	if err := digestService.RunDailyDigestIfDue(ctx); err != nil {
+		log.Printf("résumé quotidien: %v", err)
+	}
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := digestService.RunDailyDigestIfDue(ctx); err != nil {
+			log.Printf("résumé quotidien: %v", err)
+		}
+	}
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, using system environment variables")
@@ -74,13 +95,14 @@ func main() {
 		log.Printf("warning: %v", err)
 	}
 
-	router, recurringService, backupService, err := apphttp.NewRouter(db, cfg)
+	router, recurringService, backupService, digestService, err := apphttp.NewRouter(db, cfg)
 	if err != nil {
 		log.Fatalf("router init error: %v", err)
 	}
 
 	go runRecurringScheduler(recurringService)
 	go runBackupScheduler(backupService)
+	go runDigestScheduler(digestService)
 
 	addr := ":" + cfg.AppPort
 	log.Printf("Finance backend listening on http://localhost%s", addr)

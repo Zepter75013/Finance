@@ -151,12 +151,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 // hash.
 func accountSummary(account user.User) map[string]any {
 	return map[string]any{
-		"id":         account.ID,
-		"username":   account.Username,
-		"first_name": account.FirstName,
-		"last_name":  account.LastName,
-		"avatar_url": account.AvatarURL,
-		"is_admin":   account.IsAdmin,
+		"id":                   account.ID,
+		"username":             account.Username,
+		"first_name":           account.FirstName,
+		"last_name":            account.LastName,
+		"avatar_url":           account.AvatarURL,
+		"is_admin":             account.IsAdmin,
+		"email_alerts_enabled": account.EmailAlertsEnabled,
 	}
 }
 
@@ -210,6 +211,39 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.applyPasswordChange(w, r, account, payload.NewPassword)
+}
+
+// UpdateEmailAlerts bascule la préférence personnelle de résumé quotidien
+// par email de l'utilisateur courant — pure préférence, sans implication de
+// privilège, d'où un endpoint dédié plutôt qu'un champ sur PUT /users/{id}
+// (qui gère déjà toute la logique d'auto-édition vs droits admin).
+func (h *Handler) UpdateEmailAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	account, err := h.currentUser(r)
+	if err != nil {
+		http.Error(w, "non authentifié", http.StatusUnauthorized)
+		return
+	}
+
+	var payload struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.users.SetEmailAlertsEnabled(r.Context(), account.ID, payload.Enabled); err != nil {
+		http.Error(w, "échec de la mise à jour", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RequestResetCode sends a one-time 6-digit code to the account's email

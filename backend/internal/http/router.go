@@ -11,11 +11,13 @@ import (
 	"finance/backend/internal/auditlog"
 	"finance/backend/internal/auth"
 	"finance/backend/internal/backup"
+	"finance/backend/internal/budget"
 	"finance/backend/internal/category"
 	"finance/backend/internal/config"
 	"finance/backend/internal/dbsettings"
 	"finance/backend/internal/incomes"
 	"finance/backend/internal/mailer"
+	"finance/backend/internal/notify"
 	"finance/backend/internal/purchase"
 	"finance/backend/internal/recurring"
 	"finance/backend/internal/report"
@@ -27,12 +29,12 @@ import (
 // NewRouter builds the HTTP handler and also returns the recurring
 // transactions and backup services, so main.go can drive their background
 // schedulers without re-instantiating the repositories they depend on.
-func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service, *backup.Service, error) {
+func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service, *backup.Service, *notify.Service, error) {
 	mux := http.NewServeMux()
 
 	backupService, err := backup.NewService(cfg, cfg.BackupDir)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	backupHandler := backup.NewHandler(backupService)
 
@@ -53,6 +55,10 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 	incomeRepo := incomes.NewRepository(db)
 	incomeHandler := incomes.NewHandler(incomeRepo, accountRepo)
 
+	budgetRepo := budget.NewRepository(db)
+	budgetService := budget.NewService(budgetRepo, categoryRepo, purchaseRepo, incomeRepo)
+	budgetHandler := budget.NewHandler(budgetRepo, categoryRepo, accountRepo)
+
 	statementRepo := statement.NewRepository(db)
 	statementHandler := statement.NewHandler(statementRepo, cfg.StatementPdfDir, accountRepo)
 
@@ -62,7 +68,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 
 	reportService, err := report.NewService(cfg.ReportDir)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	reportHandler := report.NewHandler(reportService)
 
@@ -71,6 +77,8 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 	sessionRepo := auth.NewRepository(db)
 	mailerClient := mailer.New(cfg)
 	authHandler := auth.NewHandler(sessionRepo, userRepo, mailerClient)
+
+	notifyService := notify.NewService(mailerClient, userRepo, accountRepo, categoryRepo, purchaseRepo, budgetService, recurringRepo)
 
 	auditRepo := auditlog.NewRepository(db)
 	auditHandler := auditlog.NewHandler(auditRepo)
@@ -81,6 +89,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 	mux.HandleFunc("/auth/logout", authHandler.Logout)
 	mux.HandleFunc("/auth/me", authHandler.Me)
 	mux.HandleFunc("/auth/change-password", requireAuth(sessionRepo, userRepo, auditRepo, authHandler.ChangePassword))
+	mux.HandleFunc("/auth/email-alerts", requireAuth(sessionRepo, userRepo, auditRepo, authHandler.UpdateEmailAlerts))
 	mux.HandleFunc("/auth/request-reset-code", authHandler.RequestResetCode)
 	mux.HandleFunc("/auth/reset-password-with-code", authHandler.ResetPasswordWithCode)
 
@@ -129,6 +138,21 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 			categoryHandler.Update(w, r)
 		case http.MethodDelete:
 			categoryHandler.Delete(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
+	mux.HandleFunc("/budgets", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			budgetHandler.List(w, r)
+		case http.MethodPut:
+			budgetHandler.Update(w, r)
+		case http.MethodDelete:
+			budgetHandler.Delete(w, r)
 		case http.MethodOptions:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -435,7 +459,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	return withCORS(cfg.FrontendURL, mux), recurringService, backupService, nil
+	return withCORS(cfg.FrontendURL, mux), recurringService, backupService, notifyService, nil
 }
 
 // healthHandler expose aussi le moteur de base de données actif (mysql ou

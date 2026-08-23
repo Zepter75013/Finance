@@ -17,6 +17,10 @@ type User struct {
 	// IsAdmin autorise la gestion des utilisateurs (créer/modifier/supprimer
 	// un utilisateur, assigner des comptes) — voir user.Handler.
 	IsAdmin   bool      `json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// EmailAlertsEnabled contrôle la réception du résumé quotidien par email
+	// (budgets dépassés, échéances de récurrence) — préférence personnelle,
+	// sans lien avec IsAdmin.
+	EmailAlertsEnabled bool      `json:"email_alerts_enabled"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
