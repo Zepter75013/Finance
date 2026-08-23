@@ -10,6 +10,8 @@ var sqliteSchemaStatements = []string{
 	`CREATE TABLE IF NOT EXISTS accounts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
+		opening_balance_amount REAL,
+		opening_balance_date TEXT,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE (name)
@@ -62,6 +64,22 @@ var sqliteSchemaStatements = []string{
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_purchases_purchase_date ON purchases (purchase_date)`,
+	`CREATE TABLE IF NOT EXISTS transfers (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		from_account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
+		to_account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
+		amount DECIMAL(10, 2) NOT NULL,
+		transfer_date DATE NOT NULL,
+		note TEXT NOT NULL DEFAULT '',
+		from_is_reconciled INTEGER NOT NULL DEFAULT 0,
+		from_statement_reference TEXT NOT NULL DEFAULT '',
+		to_is_reconciled INTEGER NOT NULL DEFAULT 0,
+		to_statement_reference TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_transfers_from_account ON transfers (from_account_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_transfers_to_account ON transfers (to_account_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_purchases_category_id ON purchases (category_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_purchases_account_id ON purchases (account_id)`,
 	`CREATE TABLE IF NOT EXISTS incomes (

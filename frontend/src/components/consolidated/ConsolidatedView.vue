@@ -6,8 +6,9 @@ import { usePurchasesStore } from '../../stores/purchases'
 import { fetchPurchases } from '../../services/purchases'
 import { fetchIncomes } from '../../services/incomes'
 import { fetchStatements } from '../../services/statements'
+import { fetchTransfers } from '../../services/transfers'
 import { formatCurrency } from '../../utils/format'
-import { computeRealBalance } from '../../utils/realBalance'
+import { computeRealBalance, signTransferLeg } from '../../utils/realBalance'
 
 const emit = defineEmits(['open-account'])
 
@@ -21,10 +22,11 @@ const currentMonthKey = new Date().toISOString().slice(0, 7)
 
 async function loadAccountRow(account) {
   try {
-    const [purchases, incomes, statements] = await Promise.all([
+    const [purchases, incomes, statements, transfers] = await Promise.all([
       fetchPurchases(account.id),
       fetchIncomes(account.id),
       fetchStatements(account.id).catch(() => []),
+      fetchTransfers(account.id).catch(() => []),
     ])
 
     const monthExpense = purchases
@@ -35,15 +37,26 @@ async function loadAccountRow(account) {
       .filter((i) => i.income_date?.slice(0, 7) === currentMonthKey)
       .reduce((sum, i) => sum + Number(i.amount || 0), 0)
 
+    const balanceInfo = computeRealBalance({
+      statements,
+      purchases,
+      incomes,
+      transfers: transfers.map((t) => signTransferLeg(t, account.id)),
+      openingBalance: account.openingBalanceAmount != null
+        ? { amount: account.openingBalanceAmount, date: account.openingBalanceDate }
+        : null,
+    })
+
     return {
       account,
       monthExpense,
       monthIncome,
-      realBalance: computeRealBalance({ statements, purchases, incomes }),
+      realBalance: balanceInfo.balance,
+      isEstimateBalance: balanceInfo.source !== 'statement',
       loadError: false,
     }
   } catch {
-    return { account, monthExpense: null, monthIncome: null, realBalance: null, loadError: true }
+    return { account, monthExpense: null, monthIncome: null, realBalance: null, isEstimateBalance: false, loadError: true }
   }
 }
 
@@ -67,11 +80,11 @@ const totals = computed(() => ({
   realBalance: validRows.value.reduce((sum, row) => sum + (row.realBalance || 0), 0),
 }))
 
-// Le total réel est incomplet si un compte valide n'a pas encore de relevé
-// verrouillé (realBalance === null) — jamais présenté comme un total exact
-// dans ce cas, pour ne pas laisser croire à une vision complète du patrimoine.
+// Le total mélange des soldes ancrés à un relevé bancaire et des soldes non
+// ancrés (comptes type Livret, ou compte courant sans relevé verrouillé
+// pour l'instant) — jamais présenté comme un total homogène dans ce cas.
 const hasIncompleteBalance = computed(() =>
-  validRows.value.some((row) => row.realBalance === null) || rows.value.some((row) => row.loadError)
+  validRows.value.some((row) => row.isEstimateBalance) || rows.value.some((row) => row.loadError)
 )
 
 function openAccount(accountId) {
@@ -130,11 +143,7 @@ function openAccount(accountId) {
               </template>
               <template v-else>
                 <td>
-                  <strong v-if="row.realBalance !== null">{{ formatCurrency(row.realBalance) }}</strong>
-                  <span v-else class="consolidated-hint">
-                    — <br />
-                    Verrouille un premier relevé dans Pointage pour l'afficher
-                  </span>
+                  <strong>{{ formatCurrency(row.realBalance) }}<span v-if="row.isEstimateBalance">&nbsp;*</span></strong>
                 </td>
                 <td>{{ formatCurrency(row.monthExpense) }}</td>
                 <td>{{ formatCurrency(row.monthIncome) }}</td>
@@ -158,8 +167,9 @@ function openAccount(accountId) {
         </table>
 
         <p v-if="hasIncompleteBalance" class="consolidated-incomplete-caption">
-          * Total partiel — un ou plusieurs comptes n'ont pas encore de relevé verrouillé ou n'ont pas pu être
-          chargés, leur solde réel n'est donc pas inclus.
+          * Solde non ancré à un relevé bancaire (basé sur les mouvements non rapprochés) pour un ou plusieurs
+          comptes, ou compte n'ayant pas pu être chargé — le total mélange donc des soldes vérifiés et non
+          vérifiés.
         </p>
       </div>
     </section>
@@ -245,12 +255,6 @@ function openAccount(accountId) {
 
 .consolidated-table tbody tr:last-child td {
   border-bottom: none;
-}
-
-.consolidated-hint {
-  color: var(--text-dim, #8a939d);
-  font-size: 0.76rem;
-  line-height: 1.4;
 }
 
 .consolidated-row-error {

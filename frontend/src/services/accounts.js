@@ -86,6 +86,42 @@ export async function updateAccount(id, payload) {
   return parseJson(response)
 }
 
+export async function updateOpeningBalance(id, amount, date) {
+  const response = await fetch(`${API_BASE_URL}/accounts/${id}/opening-balance`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ amount, date }),
+  })
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, 'Impossible de mettre à jour le solde initial.')
+    throw new Error(message)
+  }
+
+  return parseJson(response)
+}
+
+export async function clearOpeningBalance(id) {
+  const response = await fetch(`${API_BASE_URL}/accounts/${id}/opening-balance`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, 'Impossible d’effacer le solde initial.')
+    throw new Error(message)
+  }
+
+  return parseJson(response)
+}
+
 export async function deleteAccount(id) {
   const response = await fetch(`${API_BASE_URL}/accounts/${id}`, {
     method: 'DELETE',

@@ -23,6 +23,7 @@ import (
 	"finance/backend/internal/report"
 	"finance/backend/internal/statement"
 	"finance/backend/internal/subcategory"
+	"finance/backend/internal/transfer"
 	"finance/backend/internal/user"
 )
 
@@ -51,6 +52,9 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 
 	purchaseRepo := purchase.NewRepository(db)
 	purchaseHandler := purchase.NewHandler(purchaseRepo, accountRepo)
+
+	transferRepo := transfer.NewRepository(db)
+	transferHandler := transfer.NewHandler(transferRepo, accountRepo)
 
 	incomeRepo := incomes.NewRepository(db)
 	incomeHandler := incomes.NewHandler(incomeRepo, accountRepo)
@@ -107,6 +111,20 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 	}))
 
 	mux.HandleFunc("/accounts/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/opening-balance") {
+			switch r.Method {
+			case http.MethodPut:
+				accountHandler.UpdateOpeningBalance(w, r)
+			case http.MethodDelete:
+				accountHandler.ClearOpeningBalance(w, r)
+			case http.MethodOptions:
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
 		switch r.Method {
 		case http.MethodPut:
 			accountHandler.Update(w, r)
@@ -205,6 +223,32 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 			purchaseHandler.Update(w, r)
 		case http.MethodDelete:
 			purchaseHandler.Delete(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
+	mux.HandleFunc("/transfers", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			transferHandler.List(w, r)
+		case http.MethodPost:
+			transferHandler.Create(w, r)
+		case http.MethodOptions:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
+	mux.HandleFunc("/transfers/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			transferHandler.Update(w, r)
+		case http.MethodDelete:
+			transferHandler.Delete(w, r)
 		case http.MethodOptions:
 			w.WriteHeader(http.StatusNoContent)
 		default:

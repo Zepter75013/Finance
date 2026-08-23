@@ -6,6 +6,8 @@ import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
 import CopyCategoriesModal from './CopyCategoriesModal.vue'
+import AccountOpeningBalanceModal from './AccountOpeningBalanceModal.vue'
+import TransferFormModal from '../transfers/TransferFormModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { formatCurrency } from '../../utils/format'
 
@@ -21,7 +23,11 @@ const accountCards = computed(() => {
   return accountsList.value
     .map((account) => ({
       ...account,
-      isUsed: account.purchaseCount > 0 || account.incomeCount > 0 || account.categoryCount > 0,
+      isUsed:
+        account.purchaseCount > 0 ||
+        account.incomeCount > 0 ||
+        account.categoryCount > 0 ||
+        account.transferCount > 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }))
 })
@@ -36,6 +42,22 @@ function handleCopyCategories(account) {
 
 function handleCategoriesCopied() {
   store.loadAccounts()
+}
+
+const transferSourceAccountId = ref(null)
+const isTransferModalOpen = ref(false)
+
+function handleTransfer(account) {
+  transferSourceAccountId.value = account.id
+  isTransferModalOpen.value = true
+}
+
+const openingBalanceTarget = ref(null)
+const isOpeningBalanceModalOpen = ref(false)
+
+function handleOpeningBalance(account) {
+  openingBalanceTarget.value = account
+  isOpeningBalanceModalOpen.value = true
 }
 
 const isModalOpen = ref(false)
@@ -162,6 +184,12 @@ async function confirmDelete() {
             <button class="ghost-btn" type="button" @click="handleRename(account)">
               Renommer
             </button>
+            <button class="ghost-btn" type="button" @click="handleOpeningBalance(account)">
+              Solde initial
+            </button>
+            <button class="ghost-btn" type="button" @click="handleTransfer(account)">
+              Transférer
+            </button>
             <button
               class="ghost-btn ghost-btn-danger"
               type="button"
@@ -204,6 +232,16 @@ async function confirmDelete() {
       :target-account="copyModalTarget"
       :accounts="accountsList"
       @copied="handleCategoriesCopied"
+    />
+
+    <AccountOpeningBalanceModal
+      v-model="isOpeningBalanceModalOpen"
+      :account="openingBalanceTarget"
+    />
+
+    <TransferFormModal
+      v-model="isTransferModalOpen"
+      :default-from-account-id="transferSourceAccountId"
     />
   </main>
 </template>

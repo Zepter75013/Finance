@@ -17,9 +17,10 @@ import {
   deleteStatementPdf,
 } from '../../services/statements'
 import { formatCurrency, formatDate } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 const store = usePurchasesStore()
-const { purchases, incomes } = storeToRefs(store)
+const { purchases, incomes, transfers } = storeToRefs(store)
 
 // Même compte actif que les écrans Achats/Revenus/Import (partagé via le
 // store) — chaque compte a sa propre suite de relevés et son propre solde
@@ -555,6 +556,35 @@ const periodTransactions = computed(() => {
     })
     .filter((row) => (!start || row.datePeriode >= start) && (!end || row.datePeriode <= end))
 
+  // Chaque virement est signé du point de vue du compte actif (voir
+  // signTransferLeg) — le pointage ne concerne QUE le côté (source ou
+  // destination) qui touche ce compte, l'autre côté reste indépendant.
+  const transferRows = transfers.value
+    .map((t) => {
+      const leg = signTransferLeg(t, activeAccountId.value)
+      const dateCompta = leg.date
+      const otherAccountName = leg.isOutgoing ? t.toAccountName : t.fromAccountName
+
+      return {
+        id: `transfer-${t.id}`,
+        sourceId: t.id,
+        type: 'transfer',
+        dateCompta,
+        dateOperation: dateCompta,
+        dateValeur: '',
+        datePeriode: dateCompta,
+        label: `Virement ${leg.isOutgoing ? 'vers' : 'depuis'} ${otherAccountName}`,
+        reference: '',
+        meta: leg.isOutgoing ? 'Sortant' : 'Entrant',
+        amount: leg.amount,
+        isReconciled: leg.isOutgoing ? t.fromIsReconciled : t.toIsReconciled,
+        statementReference: leg.statement_reference,
+        isOutgoing: leg.isOutgoing,
+        raw: t,
+      }
+    })
+    .filter((row) => (!start || row.datePeriode >= start) && (!end || row.datePeriode <= end))
+
   const currentStatementNumber = settings.statementNumber.trim()
 
   // Une opération déjà pointée sur un AUTRE relevé (typiquement un débit
@@ -564,7 +594,7 @@ const periodTransactions = computed(() => {
   const belongsToCurrentStatement = (row) =>
     !row.statementReference || row.statementReference === currentStatementNumber
 
-  return [...achatRows, ...revenuRows].filter(belongsToCurrentStatement)
+  return [...achatRows, ...revenuRows, ...transferRows].filter(belongsToCurrentStatement)
 })
 
 const visibleTransactions = computed(() => {
@@ -629,22 +659,34 @@ const balanceGap = computed(() => computedBalance.value - Number(settings.endBal
 
 const isBalanced = computed(() => Math.abs(balanceGap.value) < 0.005)
 
+// Le pointage d'un virement ne touche que le côté (source ou destination)
+// qui concerne le compte actif — l'autre côté garde son propre état,
+// indépendant, éventuellement pointé contre un relevé d'un autre compte.
+function transferReconciliationPatch(row, nextReconciled, statementReference) {
+  return row.isOutgoing
+    ? { fromIsReconciled: nextReconciled, fromStatementReference: statementReference }
+    : { toIsReconciled: nextReconciled, toStatementReference: statementReference }
+}
+
 async function toggleReconciled(row) {
   if (isCurrentStatementLocked.value) return
 
   isSavingId.value = row.id
 
   const nextReconciled = !row.isReconciled
-  const patch = {
-    isReconciled: nextReconciled,
-    statementReference: nextReconciled ? settings.statementNumber.trim() : '',
-  }
+  const statementReference = nextReconciled ? settings.statementNumber.trim() : ''
+  const patch = { isReconciled: nextReconciled, statementReference }
 
   try {
     if (row.type === 'achat') {
       await store.editPurchase(row.sourceId, { ...row.raw, ...patch })
-    } else {
+    } else if (row.type === 'revenu') {
       await store.editIncome(row.sourceId, { ...row.raw, ...patch })
+    } else {
+      await store.editTransfer(row.sourceId, {
+        ...row.raw,
+        ...transferReconciliationPatch(row, nextReconciled, statementReference),
+      })
     }
   } catch {
     // L'état visuel restera synchronisé avec le store même en cas d'échec réseau ponctuel.
@@ -687,8 +729,13 @@ async function applyStatementToReconciled() {
 
       if (row.type === 'achat') {
         await store.editPurchase(row.sourceId, { ...row.raw, ...patch })
-      } else {
+      } else if (row.type === 'revenu') {
         await store.editIncome(row.sourceId, { ...row.raw, ...patch })
+      } else {
+        await store.editTransfer(row.sourceId, {
+          ...row.raw,
+          ...transferReconciliationPatch(row, true, statementNumber),
+        })
       }
     } catch {
       // On continue avec les lignes suivantes même en cas d'échec ponctuel.

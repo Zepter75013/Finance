@@ -14,6 +14,7 @@ import DashboardView from './components/dashboard/DashboardView.vue'
 import ConsolidatedView from './components/consolidated/ConsolidatedView.vue'
 import MonthlyOverviewView from './components/dashboard/MonthlyOverviewView.vue'
 import RecurringView from './components/recurring/RecurringView.vue'
+import TransfersView from './components/transfers/TransfersView.vue'
 import PurchasesView from './components/dashboard/PurchasesView.vue'
 import PurchaseFormModal from './components/dashboard/PurchaseFormModal.vue'
 import DeletePurchaseModal from './components/dashboard/DeletePurchaseModal.vue'
@@ -551,6 +552,8 @@ function handleBulkDeleted(result) {
         <MonthlyOverviewView v-else-if="activeView === 'monthly'" />
 
         <RecurringView v-else-if="activeView === 'recurring'" />
+
+        <TransfersView v-else-if="activeView === 'transfers'" />
 
         <template v-else>
           <section

@@ -27,10 +27,18 @@ import {
   createAccount as createAccountApi,
   updateAccount as updateAccountApi,
   deleteAccount as deleteAccountApi,
+  updateOpeningBalance as updateOpeningBalanceApi,
+  clearOpeningBalance as clearOpeningBalanceApi,
 } from '../services/accounts'
 import { fetchStatements } from '../services/statements'
 import { fetchBudgets, upsertBudget, deleteBudget } from '../services/budgets'
-import { findLatestLockedStatement, computeRealBalance } from '../utils/realBalance'
+import {
+  fetchTransfers,
+  createTransfer as createTransferApi,
+  updateTransfer as updateTransferApi,
+  deleteTransfer as deleteTransferApi,
+} from '../services/transfers'
+import { findLatestLockedStatement, computeRealBalance, signTransferLeg } from '../utils/realBalance'
 
 export const usePurchasesStore = defineStore('purchases', () => {
   const purchases = ref([])
@@ -39,6 +47,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
   const subCategoriesList = ref([])
   const accountsList = ref([])
   const statements = ref([])
+  const transfers = ref([])
 
   // Compte "actif" : celui qui pré-remplit le champ compte lorsqu'on saisit
   // un nouvel achat/revenu ou qu'on importe un fichier, pour ne pas avoir à
@@ -178,6 +187,9 @@ export const usePurchasesStore = defineStore('purchases', () => {
       totalExpense: Number(account.total_expense || 0),
       totalIncome: Number(account.total_income || 0),
       categoryCount: Number(account.category_count || 0),
+      transferCount: Number(account.transfer_count || 0),
+      openingBalanceAmount: account.opening_balance_amount ?? null,
+      openingBalanceDate: account.opening_balance_date ?? null,
     }
   }
 
@@ -202,6 +214,37 @@ export const usePurchasesStore = defineStore('purchases', () => {
       statementReference: income.statement_reference || '',
       createdAt: income.created_at,
       updatedAt: income.updated_at,
+    }
+  }
+
+  function mapTransferFromApi(t) {
+    return {
+      id: t.id,
+      fromAccountId: t.from_account_id,
+      toAccountId: t.to_account_id,
+      fromAccountName: getAccountName(t.from_account_id),
+      toAccountName: getAccountName(t.to_account_id),
+      amount: Number(t.amount || 0),
+      date: t.transfer_date?.slice(0, 10) || '',
+      note: t.note || '',
+      fromIsReconciled: Boolean(t.from_is_reconciled),
+      fromStatementReference: t.from_statement_reference || '',
+      toIsReconciled: Boolean(t.to_is_reconciled),
+      toStatementReference: t.to_statement_reference || '',
+    }
+  }
+
+  function buildTransferPayload(t) {
+    return {
+      from_account_id: Number(t.fromAccountId || 0),
+      to_account_id: Number(t.toAccountId || 0),
+      amount: Number(t.amount || 0),
+      transfer_date: t.date || new Date().toISOString().slice(0, 10),
+      note: t.note?.trim() || '',
+      from_is_reconciled: Boolean(t.fromIsReconciled),
+      from_statement_reference: t.fromStatementReference?.trim() || '',
+      to_is_reconciled: Boolean(t.toIsReconciled),
+      to_statement_reference: t.toStatementReference?.trim() || '',
     }
   }
 
@@ -461,22 +504,46 @@ export const usePurchasesStore = defineStore('purchases', () => {
 
   // Le dernier relevé VERROUILLÉ (et non simplement le plus récent, qui
   // pourrait être un brouillon en cours de saisie) sert d'ancrage fiable —
-  // c'est un solde bancaire confirmé, pas une estimation. Logique partagée
-  // avec la vue consolidée multi-comptes (utils/realBalance.js), qui
-  // recalcule la même chose pour chaque compte.
+  // c'est un solde bancaire confirmé. Logique partagée avec la vue
+  // consolidée multi-comptes (utils/realBalance.js), qui recalcule la même
+  // chose pour chaque compte.
   const latestLockedStatement = computed(() => findLatestLockedStatement(statements.value))
+
+  const activeAccount = computed(() =>
+    accountsList.value.find((account) => Number(account.id) === Number(activeAccountId.value)) || null
+  )
 
   // Solde réel = solde de fin du dernier relevé verrouillé + tous les achats/
   // revenus pas encore rattachés à un relevé (statementReference vide) — ce
   // sont les mouvements que la banque a déjà comptabilisés mais que le
-  // pointage personnel n'a pas encore rapprochés d'un relevé précis.
-  const realCurrentBalance = computed(() =>
+  // pointage personnel n'a pas encore rapprochés d'un relevé précis. Sans
+  // relevé verrouillé, repli sur un solde initial déclaré si le compte en a
+  // un (compte type Livret), sinon sur les seuls mouvements non rapprochés —
+  // voir le commentaire de computeRealBalance pour le détail des trois cas.
+  // Chaque virement est signé du point de vue du compte actif (débit si ce
+  // compte en est la source, crédit s'il en est la destination) — un seul
+  // calcul de "isOutgoing", partagé avec ConsolidatedView.vue et
+  // ReconciliationView.vue via signTransferLeg.
+  const transferLegsForActiveAccount = computed(() =>
+    transfers.value.map((t) => signTransferLeg(t, activeAccountId.value))
+  )
+
+  const realBalanceInfo = computed(() =>
     computeRealBalance({
       statements: statements.value,
-      purchases: purchases.value.map((p) => ({ amount: p.amount, statement_reference: p.statementReference })),
-      incomes: incomes.value.map((i) => ({ amount: i.amount, statement_reference: i.statementReference })),
+      purchases: purchases.value.map((p) => ({ amount: p.amount, statement_reference: p.statementReference, date: p.date })),
+      incomes: incomes.value.map((i) => ({ amount: i.amount, statement_reference: i.statementReference, date: i.income_date })),
+      transfers: transferLegsForActiveAccount.value,
+      openingBalance: activeAccount.value
+        ? { amount: activeAccount.value.openingBalanceAmount, date: activeAccount.value.openingBalanceDate }
+        : null,
     })
   )
+  const realCurrentBalance = computed(() => realBalanceInfo.value.balance)
+  const realBalanceSource = computed(() => realBalanceInfo.value.source)
+  // true = solde non ancré à un relevé bancaire (pas "approximatif" : le
+  // calcul reste exact, juste pas confirmé par la banque).
+  const isRealBalanceEstimate = computed(() => realBalanceSource.value !== 'statement')
 
   async function loadCategories() {
     if (!activeAccountId.value) {
@@ -572,6 +639,22 @@ export const usePurchasesStore = defineStore('purchases', () => {
     }
   }
 
+  // Virements touchant le compte actif (source OU destination) — pas
+  // d'échec bloquant, même raison que loadStatements ci-dessus.
+  async function loadTransfers() {
+    if (!activeAccountId.value) {
+      transfers.value = []
+      return
+    }
+
+    try {
+      const data = await fetchTransfers(activeAccountId.value)
+      transfers.value = data.map(mapTransferFromApi)
+    } catch {
+      transfers.value = []
+    }
+  }
+
   // Chaque compte a ses propres achats, revenus et catégories — bascule
   // complète des trois à chaque changement de compte actif (bootstrap initial
   // ET changement ultérieur via le sélecteur), pour que le dashboard, le
@@ -587,6 +670,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
       await loadPurchasesForActiveAccount()
       await loadStatements()
       await loadBudgetOverrides()
+      await loadTransfers()
       activeCategory.value = 'Toutes'
       selectedPurchaseId.value = purchases.value[0]?.id ?? null
     } catch (err) {
@@ -854,6 +938,69 @@ export const usePurchasesStore = defineStore('purchases', () => {
     return mappedAccount
   }
 
+  async function setAccountOpeningBalance(id, amount, date) {
+    error.value = ''
+
+    const updated = await updateOpeningBalanceApi(id, amount, date)
+    const mappedAccount = mapAccountFromApi(updated)
+
+    accountsList.value = accountsList.value.map((currentAccount) => {
+      return Number(currentAccount.id) === Number(id) ? mappedAccount : currentAccount
+    })
+
+    return mappedAccount
+  }
+
+  async function clearAccountOpeningBalance(id) {
+    error.value = ''
+
+    const updated = await clearOpeningBalanceApi(id)
+    const mappedAccount = mapAccountFromApi(updated)
+
+    accountsList.value = accountsList.value.map((currentAccount) => {
+      return Number(currentAccount.id) === Number(id) ? mappedAccount : currentAccount
+    })
+
+    return mappedAccount
+  }
+
+  async function createTransfer(transfer) {
+    error.value = ''
+
+    const payload = buildTransferPayload(transfer)
+    const created = await createTransferApi(payload)
+    const mapped = mapTransferFromApi(created)
+
+    if (
+      Number(mapped.fromAccountId) === Number(activeAccountId.value) ||
+      Number(mapped.toAccountId) === Number(activeAccountId.value)
+    ) {
+      transfers.value.unshift(mapped)
+    }
+
+    return mapped
+  }
+
+  async function editTransfer(id, transfer) {
+    error.value = ''
+
+    const payload = buildTransferPayload(transfer)
+    const updated = await updateTransferApi(id, payload)
+    const mapped = mapTransferFromApi(updated)
+
+    transfers.value = transfers.value.map((current) => (current.id === id ? mapped : current))
+
+    return mapped
+  }
+
+  async function removeTransfer(id) {
+    error.value = ''
+
+    await deleteTransferApi(id)
+
+    transfers.value = transfers.value.filter((t) => t.id !== id)
+  }
+
   async function removeAccount(id) {
     error.value = ''
 
@@ -1061,8 +1208,12 @@ export const usePurchasesStore = defineStore('purchases', () => {
     currentMonthExpenseSpent,
     currentMonthBudgetRemaining,
     statements,
+    transfers,
+    transferLegsForActiveAccount,
     latestLockedStatement,
     realCurrentBalance,
+    isRealBalanceEstimate,
+    realBalanceSource,
     suggestedCategoryBudget,
     currentMonthCategoryBudget,
     loadCategories,
@@ -1081,8 +1232,14 @@ export const usePurchasesStore = defineStore('purchases', () => {
     removeSubCategory,
     createAccount,
     editAccount,
+    setAccountOpeningBalance,
+    clearAccountOpeningBalance,
     removeAccount,
     copyCategoriesFromAccount,
+    loadTransfers,
+    createTransfer,
+    editTransfer,
+    removeTransfer,
     createIncome,
     editIncome,
     removeIncome,

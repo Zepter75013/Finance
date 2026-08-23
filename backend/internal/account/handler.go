@@ -116,6 +116,90 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(updated)
 }
 
+// accountIDFromOpeningBalancePath extrait l'id depuis /accounts/{id}/opening-balance.
+func accountIDFromOpeningBalancePath(path string) (uint64, error) {
+	trimmed := strings.TrimPrefix(path, "/accounts/")
+	trimmed = strings.TrimSuffix(trimmed, "/opening-balance")
+	trimmed = strings.Trim(trimmed, "/")
+
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return 0, strconv.ErrSyntax
+	}
+
+	return strconv.ParseUint(trimmed, 10, 64)
+}
+
+func (h *Handler) UpdateOpeningBalance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := accountIDFromOpeningBalancePath(r.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid account id", http.StatusBadRequest)
+		return
+	}
+
+	var payload struct {
+		Amount float64 `json:"amount"`
+		Date   string  `json:"date"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if payload.Date == "" {
+		http.Error(w, "date is required", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.repo.SetOpeningBalance(r.Context(), id, payload.Amount, payload.Date)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to update opening balance", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(updated)
+}
+
+func (h *Handler) ClearOpeningBalance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := accountIDFromOpeningBalancePath(r.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid account id", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.repo.ClearOpeningBalance(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to clear opening balance", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(updated)
+}
+
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)

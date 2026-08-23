@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -27,7 +28,9 @@ func NewRepository(db *sql.DB) *Repository {
 
 const selectColumns = `
 	id,
-	name
+	name,
+	opening_balance_amount,
+	opening_balance_date
 `
 
 // Les compteurs (achats, revenus, catégories) permettent au frontend
@@ -37,12 +40,35 @@ const selectColumns = `
 const selectColumnsWithStats = `
 	a.id,
 	a.name,
+	a.opening_balance_amount,
+	a.opening_balance_date,
 	(SELECT COUNT(*) FROM purchases p WHERE p.account_id = a.id) AS purchase_count,
 	(SELECT COUNT(*) FROM incomes i WHERE i.account_id = a.id) AS income_count,
 	(SELECT COALESCE(SUM(p2.amount), 0) FROM purchases p2 WHERE p2.account_id = a.id) AS total_expense,
 	(SELECT COALESCE(SUM(i2.amount), 0) FROM incomes i2 WHERE i2.account_id = a.id) AS total_income,
-	(SELECT COUNT(*) FROM categories c WHERE c.account_id = a.id) AS category_count
+	(SELECT COUNT(*) FROM categories c WHERE c.account_id = a.id) AS category_count,
+	(SELECT COUNT(*) FROM transfers t WHERE t.from_account_id = a.id OR t.to_account_id = a.id) AS transfer_count
 `
+
+// scanOpeningBalance convertit les colonnes nullable opening_balance_amount/
+// date scannées dans des types intermédiaires vers les pointeurs exposés par
+// Account — même convention que purchase.Repository pour operation_date.
+func scanOpeningBalance(amount sql.NullFloat64, date sql.NullTime) (*float64, *string) {
+	var amountPtr *float64
+	var datePtr *string
+
+	if amount.Valid {
+		v := amount.Float64
+		amountPtr = &v
+	}
+
+	if date.Valid {
+		formatted := date.Time.Format("2006-01-02")
+		datePtr = &formatted
+	}
+
+	return amountPtr, datePtr
+}
 
 // List renvoie les comptes visibles par userID : tous les comptes si cet
 // utilisateur n'a jamais été restreint (users.accounts_restricted = 0),
@@ -67,18 +93,25 @@ func (r *Repository) List(ctx context.Context, userID uint64) ([]Account, error)
 
 	for rows.Next() {
 		var a Account
+		var openingAmount sql.NullFloat64
+		var openingDate sql.NullTime
 
 		if err := rows.Scan(
 			&a.ID,
 			&a.Name,
+			&openingAmount,
+			&openingDate,
 			&a.PurchaseCount,
 			&a.IncomeCount,
 			&a.TotalExpense,
 			&a.TotalIncome,
 			&a.CategoryCount,
+			&a.TransferCount,
 		); err != nil {
 			return nil, err
 		}
+
+		a.OpeningBalanceAmount, a.OpeningBalanceDate = scanOpeningBalance(openingAmount, openingDate)
 
 		accounts = append(accounts, a)
 	}
@@ -130,6 +163,62 @@ func (r *Repository) Create(ctx context.Context, name string) (Account, error) {
 	return account, nil
 }
 
+// SetOpeningBalance déclare un solde de départ à une date donnée — sert
+// d'ancrage à computeRealBalance (frontend) quand ce compte n'a aucun relevé
+// verrouillé (compte type Livret, qui n'en a structurellement jamais).
+func (r *Repository) SetOpeningBalance(ctx context.Context, id uint64, amount float64, date string) (Account, error) {
+	parsedDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return Account{}, err
+	}
+
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE accounts SET opening_balance_amount = ?, opening_balance_date = ? WHERE id = ?`,
+		amount, parsedDate, id,
+	)
+	if err != nil {
+		return Account{}, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Account{}, err
+	}
+
+	if rowsAffected == 0 {
+		if _, err := r.FindByID(ctx, id); err != nil {
+			return Account{}, sql.ErrNoRows
+		}
+	}
+
+	return r.FindByID(ctx, id)
+}
+
+// ClearOpeningBalance efface le solde de départ déclaré — le compte retombe
+// alors sur le repli "mouvements non rapprochés" sans ancrage.
+func (r *Repository) ClearOpeningBalance(ctx context.Context, id uint64) (Account, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE accounts SET opening_balance_amount = NULL, opening_balance_date = NULL WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return Account{}, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Account{}, err
+	}
+
+	if rowsAffected == 0 {
+		if _, err := r.FindByID(ctx, id); err != nil {
+			return Account{}, sql.ErrNoRows
+		}
+	}
+
+	return r.FindByID(ctx, id)
+}
+
 func (r *Repository) Update(ctx context.Context, id uint64, name string) (Account, error) {
 	query := `
 		UPDATE accounts
@@ -166,10 +255,15 @@ func (r *Repository) FindByID(ctx context.Context, id uint64) (Account, error) {
 	`
 
 	var a Account
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&a.ID, &a.Name)
+	var openingAmount sql.NullFloat64
+	var openingDate sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&a.ID, &a.Name, &openingAmount, &openingDate)
 	if err != nil {
 		return Account{}, err
 	}
+
+	a.OpeningBalanceAmount, a.OpeningBalanceDate = scanOpeningBalance(openingAmount, openingDate)
 
 	return a, nil
 }

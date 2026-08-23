@@ -10,8 +10,12 @@ import { formatCurrency, formatDate } from '../../utils/format'
 const emit = defineEmits(['imported'])
 
 const store = usePurchasesStore()
-const { categoriesList, subCategoriesList, purchases, incomes, activeAccountId } =
+const { categoriesList, subCategoriesList, purchases, incomes, activeAccountId, accountsList } =
   storeToRefs(store)
+
+const otherAccountsList = computed(() =>
+  accountsList.value.filter((account) => Number(account.id) !== Number(activeAccountId.value))
+)
 
 const isCategoryModalOpen = ref(false)
 const categoryModalRow = ref(null)
@@ -601,6 +605,11 @@ function buildTransactions() {
       valueDate: normalizeDate(rawValueDate) || '',
       isReconciled,
       error: '',
+      // Un virement interne (vers/depuis un autre compte géré dans l'app) ne
+      // doit jamais devenir un achat/revenu — voir confirmImport(). Le signe
+      // du montant (déjà capturé par `type`) continue de déterminer le sens.
+      isTransfer: false,
+      transferAccountId: null,
     })
   }
 
@@ -680,14 +689,18 @@ const summary = computed(() => {
 })
 
 const missingCategoryCount = computed(() => {
-  return includedTransactions.value.filter((row) => row.type === 'achat' && !row.categoryId).length
+  return includedTransactions.value.filter((row) => row.type === 'achat' && !row.categoryId && !row.isTransfer).length
+})
+
+const missingTransferAccountCount = computed(() => {
+  return includedTransactions.value.filter((row) => row.isTransfer && !row.transferAccountId).length
 })
 
 const unmatchedBankCategories = computed(() => {
   const counts = new Map()
 
   for (const row of includedTransactions.value) {
-    if (row.categoryId || !row.bankCategoryName) continue
+    if (row.isTransfer || row.categoryId || !row.bankCategoryName) continue
     const key = `${row.type}::${row.bankCategoryName}`
     const existing = counts.get(key)
 
@@ -714,7 +727,7 @@ async function createUnmatchedCategories() {
     if (!categoryId) continue
 
     for (const row of transactions.value) {
-      if (row.type === type && !row.categoryId && row.bankCategoryName === name) {
+      if (row.type === type && !row.categoryId && !row.isTransfer && row.bankCategoryName === name) {
         row.categoryId = categoryId
         row.subCategoryId = findMatchingSubCategoryId(categoryId, row.bankSubCategoryName)
       }
@@ -728,13 +741,16 @@ const canImport = computed(() => {
   return (
     includedTransactions.value.length > 0 &&
     missingCategoryCount.value === 0 &&
+    missingTransferAccountCount.value === 0 &&
     Boolean(activeAccountId.value) &&
     !isImporting.value
   )
 })
 
 function scrollToFirstMissingCategory() {
-  const row = includedTransactions.value.find((item) => item.type === 'achat' && !item.categoryId)
+  const row = includedTransactions.value.find(
+    (item) => (item.type === 'achat' && !item.categoryId && !item.isTransfer) || (item.isTransfer && !item.transferAccountId)
+  )
   if (!row) return
 
   const el = document.getElementById(`import-row-${row.id}`)
@@ -747,6 +763,16 @@ function scrollToFirstMissingCategory() {
 
 function toggleAll(value) {
   for (const row of transactions.value) row.included = value
+}
+
+function toggleTransferMode(row) {
+  row.isTransfer = !row.isTransfer
+
+  if (row.isTransfer) {
+    row.transferAccountId = otherAccountsList.value[0]?.id ?? null
+  } else {
+    row.transferAccountId = null
+  }
 }
 
 function handleCategoryChange(row, event) {
@@ -832,7 +858,20 @@ async function confirmImport() {
     row.error = ''
 
     try {
-      if (row.type === 'achat') {
+      if (row.isTransfer) {
+        const isOutgoing = row.type === 'achat'
+        await store.createTransfer({
+          fromAccountId: isOutgoing ? activeAccountId.value : row.transferAccountId,
+          toAccountId: isOutgoing ? row.transferAccountId : activeAccountId.value,
+          amount: row.amount,
+          date: row.date,
+          note: row.label,
+          fromIsReconciled: isOutgoing ? row.isReconciled : false,
+          fromStatementReference: isOutgoing ? row.reference : '',
+          toIsReconciled: !isOutgoing ? row.isReconciled : false,
+          toStatementReference: !isOutgoing ? row.reference : '',
+        })
+      } else if (row.type === 'achat') {
         await store.submitPurchase({
           merchant: row.label,
           categoryId: row.categoryId,
@@ -1167,29 +1206,52 @@ async function confirmImport() {
                   {{ row.type === 'achat' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
                 </td>
                 <td>
-                  <span class="import-type-badge" :class="row.type === 'achat' ? 'is-achat' : 'is-revenu'">
-                    {{ row.type === 'achat' ? 'Achat' : 'Revenu' }}
+                  <span
+                    class="import-type-badge"
+                    :class="row.isTransfer ? 'is-transfer' : row.type === 'achat' ? 'is-achat' : 'is-revenu'"
+                  >
+                    {{ row.isTransfer ? 'Virement' : row.type === 'achat' ? 'Achat' : 'Revenu' }}
                   </span>
                 </td>
                 <td>
-                  <select
-                    :value="row.categoryId"
-                    :class="{ 'field-missing': row.included && !row.categoryId }"
-                    @change="handleCategoryChange(row, $event)"
-                  >
-                    <option :value="null">Choisir une catégorie</option>
-                    <option v-for="category in categoriesForRow(row)" :key="category.id" :value="category.id">
-                      {{ category.name }}
-                    </option>
-                    <option value="__new__">+ Créer une nouvelle catégorie…</option>
-                  </select>
-                  <p v-if="row.bankCategoryName && !row.categoryId" class="import-bank-hint">
-                    Banque : {{ row.bankCategoryName }}
-                  </p>
-                  <p v-if="row.isSuggested" class="import-suggested-hint" title="Basé sur un import précédent pour ce même libellé — vérifie avant de valider">
-                    🔮 Suggéré, à vérifier
-                  </p>
-                  <p v-if="row.error" class="import-row-error">{{ row.error }}</p>
+                  <template v-if="row.isTransfer">
+                    <select
+                      v-model="row.transferAccountId"
+                      :class="{ 'field-missing': row.included && !row.transferAccountId }"
+                    >
+                      <option :value="null">Choisir un compte</option>
+                      <option v-for="account in otherAccountsList" :key="account.id" :value="account.id">
+                        {{ account.name }}
+                      </option>
+                    </select>
+                    <p class="import-transfer-toggle">
+                      <a href="#" @click.prevent="toggleTransferMode(row)">↩ Achat/revenu</a>
+                    </p>
+                    <p v-if="row.error" class="import-row-error">{{ row.error }}</p>
+                  </template>
+                  <template v-else>
+                    <select
+                      :value="row.categoryId"
+                      :class="{ 'field-missing': row.included && !row.categoryId }"
+                      @change="handleCategoryChange(row, $event)"
+                    >
+                      <option :value="null">Choisir une catégorie</option>
+                      <option v-for="category in categoriesForRow(row)" :key="category.id" :value="category.id">
+                        {{ category.name }}
+                      </option>
+                      <option value="__new__">+ Créer une nouvelle catégorie…</option>
+                    </select>
+                    <p v-if="row.bankCategoryName && !row.categoryId" class="import-bank-hint">
+                      Banque : {{ row.bankCategoryName }}
+                    </p>
+                    <p v-if="row.isSuggested" class="import-suggested-hint" title="Basé sur un import précédent pour ce même libellé — vérifie avant de valider">
+                      🔮 Suggéré, à vérifier
+                    </p>
+                    <p v-if="otherAccountsList.length" class="import-transfer-toggle">
+                      <a href="#" @click.prevent="toggleTransferMode(row)">↔ Virement</a>
+                    </p>
+                    <p v-if="row.error" class="import-row-error">{{ row.error }}</p>
+                  </template>
                 </td>
                 <td>
                   <select
@@ -1247,8 +1309,15 @@ async function confirmImport() {
           </button>
         </p>
 
-        <p v-if="missingCategoryCount" class="import-missing-warning">
-          {{ missingCategoryCount }} achat{{ missingCategoryCount > 1 ? 's' : '' }} sans catégorie — l'import reste désactivé tant qu'ils n'en ont pas.
+        <p v-if="missingCategoryCount || missingTransferAccountCount" class="import-missing-warning">
+          <template v-if="missingCategoryCount">
+            {{ missingCategoryCount }} achat{{ missingCategoryCount > 1 ? 's' : '' }} sans catégorie
+          </template>
+          <template v-if="missingCategoryCount && missingTransferAccountCount"> et </template>
+          <template v-if="missingTransferAccountCount">
+            {{ missingTransferAccountCount }} virement{{ missingTransferAccountCount > 1 ? 's' : '' }} sans compte lié
+          </template>
+          — l'import reste désactivé tant qu'ils n'en ont pas.
           <button class="ghost-btn import-missing-jump" type="button" @click="scrollToFirstMissingCategory">
             Voir la première ligne concernée
           </button>
@@ -1634,6 +1703,22 @@ async function confirmImport() {
 .import-type-badge.is-revenu {
   background: rgba(34, 197, 94, 0.12);
   color: var(--positive-text);
+}
+
+.import-type-badge.is-transfer {
+  background: rgba(92, 200, 209, 0.14);
+  color: #5cc8d1;
+}
+
+.import-transfer-toggle {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+}
+
+.import-transfer-toggle a {
+  color: var(--text-dim, #8a939d);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 @media (max-width: 680px) {

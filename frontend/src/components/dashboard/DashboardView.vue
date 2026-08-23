@@ -8,7 +8,7 @@ import DashboardCharts from './DashboardCharts.vue'
 import CategorySubTrendGrid from './CategorySubTrendGrid.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useRecurringStore } from '../../stores/recurring'
-import { formatCurrency } from '../../utils/format'
+import { formatCurrency, formatDate } from '../../utils/format'
 
 const emit = defineEmits(['open-recurring'])
 
@@ -22,6 +22,8 @@ const {
   accountsList,
   realCurrentBalance,
   latestLockedStatement,
+  realBalanceSource,
+  activeAccount,
 } = storeToRefs(store)
 
 const recurringStore = useRecurringStore()
@@ -249,14 +251,18 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
 
       <article class="panel stat-card">
         <span>Solde réel (dernier relevé + non pointé)</span>
-        <template v-if="latestLockedStatement">
-          <strong>{{ formatCurrency(realCurrentBalance) }}</strong>
-          <p>D’après le relevé n°{{ latestLockedStatement.reference }}, hors budget</p>
-        </template>
-        <template v-else>
-          <strong>—</strong>
-          <p>Verrouille un premier relevé dans Pointage pour l’afficher</p>
-        </template>
+        <strong>{{ formatCurrency(realCurrentBalance) }}</strong>
+        <p v-if="realBalanceSource === 'statement'">
+          D’après le relevé n°{{ latestLockedStatement.reference }}, hors budget
+        </p>
+        <p v-else-if="realBalanceSource === 'opening_balance'">
+          Basé sur un solde initial du {{ formatDate(activeAccount?.openingBalanceDate) }} + mouvements enregistrés
+          depuis
+        </p>
+        <p v-else>
+          Basé sur les mouvements non rapprochés — verrouille un relevé dans Pointage pour un solde ancré à la
+          banque
+        </p>
       </article>
     </section>
 
