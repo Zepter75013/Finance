@@ -52,19 +52,38 @@ export async function fetchLatestReportMetadata() {
   return parseJson(response)
 }
 
+// Sans timeout, un problème réseau ou serveur (proxy bloqué, disque lent...)
+// laisserait le bouton "Génération..." tourner indéfiniment sans jamais
+// afficher d'erreur — 60s est largement suffisant pour l'upload d'un PDF.
+const UPLOAD_TIMEOUT_MS = 60000
+
 export async function uploadGeneratedReport(pdfBlob, criteria) {
   const formData = new FormData()
   formData.append('file', pdfBlob, 'rapport-finance-ui.pdf')
   formData.append('criteria', criteria)
 
-  const response = await fetch(`${API_BASE_URL}/reports`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-    },
-    body: formData,
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}/reports`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+      },
+      body: formData,
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('L’enregistrement du rapport a pris trop de temps (délai dépassé).')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   if (!response.ok) {
     const message = await extractErrorMessage(response, 'Impossible d’enregistrer le rapport généré.')

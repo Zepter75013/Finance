@@ -62,7 +62,22 @@ func main() {
 	addr := ":" + cfg.AppPort
 	log.Printf("Finance backend listening on http://localhost%s", addr)
 
-	if err := http.ListenAndServe(addr, router); err != nil {
+	// http.ListenAndServe seul n'impose aucun délai — une connexion bloquée
+	// (écriture disque lente, client qui n'envoie jamais la fin du corps...)
+	// retiendrait sa goroutine indéfiniment. 5 minutes reste généreux pour
+	// les plus gros transferts de l'app (upload de sauvegarde SQL, rapport
+	// PDF) tout en garantissant qu'une requête finit toujours par échouer
+	// proprement plutôt que de bloquer pour toujours.
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

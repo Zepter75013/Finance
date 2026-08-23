@@ -44,7 +44,10 @@ const store = usePurchasesStore()
 const { purchases, incomes, categoriesList, subCategoriesList } = storeToRefs(store)
 
 const reportType = ref('both')
-const reportPeriod = ref('all')
+// "Cette année" par défaut (pas "Tout") — générer un rapport sur tout
+// l'historique peut inclure des milliers de lignes et rendre la génération
+// très longue ; l'utilisateur peut toujours choisir "Tout" explicitement.
+const reportPeriod = ref('ytd')
 const reportCustomStart = ref('')
 const reportCustomEnd = ref('')
 const reportCategories = ref([])
@@ -375,7 +378,7 @@ const criteriaDescription = computed(() => {
 
 function resetFilters() {
   reportType.value = 'both'
-  reportPeriod.value = 'all'
+  reportPeriod.value = 'ytd'
   reportCustomStart.value = ''
   reportCustomEnd.value = ''
   reportCategories.value = []
