@@ -11,6 +11,7 @@ import LoginView from './components/auth/LoginView.vue'
 import ChangePasswordModal from './components/auth/ChangePasswordModal.vue'
 import AboutModal from './components/Common/AboutModal.vue'
 import DashboardView from './components/dashboard/DashboardView.vue'
+import ConsolidatedView from './components/consolidated/ConsolidatedView.vue'
 import MonthlyOverviewView from './components/dashboard/MonthlyOverviewView.vue'
 import RecurringView from './components/recurring/RecurringView.vue'
 import PurchasesView from './components/dashboard/PurchasesView.vue'
@@ -536,6 +537,11 @@ function handleBulkDeleted(result) {
         <AuditLogView v-else-if="activeView === 'audit-log'" />
 
         <PreferencesView v-else-if="activeView === 'preferences'" />
+
+        <ConsolidatedView
+          v-else-if="activeView === 'consolidated'"
+          @open-account="navigateTo('dashboard')"
+        />
 
         <DashboardView
           v-else-if="activeView === 'dashboard'"

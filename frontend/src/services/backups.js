@@ -48,7 +48,11 @@ export async function fetchBackupSettings() {
   return parseJson(response)
 }
 
-export async function updateBackupSettings(directory) {
+// Envoie toujours l'état complet des trois réglages (le backend réécrit le
+// fichier de configuration en entier à chaque appel) — n'envoyer que le
+// champ modifié réinitialiserait silencieusement les autres à leurs valeurs
+// par défaut Go (false/0).
+export async function updateBackupSettings({ directory, autoBackupEnabled, retentionDays }) {
   const response = await fetch(`${API_BASE_URL}/backups/settings`, {
     method: 'PUT',
     credentials: 'include',
@@ -56,11 +60,15 @@ export async function updateBackupSettings(directory) {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ directory }),
+    body: JSON.stringify({
+      directory,
+      auto_backup_enabled: autoBackupEnabled,
+      retention_days: retentionDays,
+    }),
   })
 
   if (!response.ok) {
-    const message = await extractErrorMessage(response, 'Impossible de changer le dossier de sauvegarde.')
+    const message = await extractErrorMessage(response, 'Impossible de mettre à jour les réglages de sauvegarde.')
     throw new Error(message)
   }
 

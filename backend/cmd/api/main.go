@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"finance/backend/internal/backup"
 	"finance/backend/internal/config"
 	"finance/backend/internal/database"
 	apphttp "finance/backend/internal/http"
@@ -32,6 +33,27 @@ func runRecurringScheduler(recurringService *recurring.Service) {
 	}
 }
 
+// runBackupScheduler exécute la sauvegarde automatique si elle est due, une
+// fois immédiatement (rattrape un jour manqué si le conteneur était arrêté
+// au moment prévu), puis toutes les heures — même logique que
+// runRecurringScheduler.
+func runBackupScheduler(backupService *backup.Service) {
+	ctx := context.Background()
+
+	if err := backupService.RunScheduledBackupIfDue(ctx); err != nil {
+		log.Printf("sauvegarde automatique: %v", err)
+	}
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := backupService.RunScheduledBackupIfDue(ctx); err != nil {
+			log.Printf("sauvegarde automatique: %v", err)
+		}
+	}
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, using system environment variables")
@@ -52,12 +74,13 @@ func main() {
 		log.Printf("warning: %v", err)
 	}
 
-	router, recurringService, err := apphttp.NewRouter(db, cfg)
+	router, recurringService, backupService, err := apphttp.NewRouter(db, cfg)
 	if err != nil {
 		log.Fatalf("router init error: %v", err)
 	}
 
 	go runRecurringScheduler(recurringService)
+	go runBackupScheduler(backupService)
 
 	addr := ":" + cfg.AppPort
 	log.Printf("Finance backend listening on http://localhost%s", addr)

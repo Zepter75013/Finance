@@ -25,14 +25,14 @@ import (
 )
 
 // NewRouter builds the HTTP handler and also returns the recurring
-// transactions service, so main.go can drive the background scheduler
-// without re-instantiating the repositories it depends on.
-func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service, error) {
+// transactions and backup services, so main.go can drive their background
+// schedulers without re-instantiating the repositories they depend on.
+func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service, *backup.Service, error) {
 	mux := http.NewServeMux()
 
 	backupService, err := backup.NewService(cfg, cfg.BackupDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	backupHandler := backup.NewHandler(backupService)
 
@@ -62,7 +62,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 
 	reportService, err := report.NewService(cfg.ReportDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	reportHandler := report.NewHandler(reportService)
 
@@ -435,7 +435,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	return withCORS(cfg.FrontendURL, mux), recurringService, nil
+	return withCORS(cfg.FrontendURL, mux), recurringService, backupService, nil
 }
 
 // healthHandler expose aussi le moteur de base de données actif (mysql ou

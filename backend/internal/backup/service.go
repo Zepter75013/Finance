@@ -23,16 +23,32 @@ var ErrDialogCancelled = errors.New("l'utilisateur a annulé la sélection")
 
 const fileSuffix = ".sql"
 
+// autoBackupPrefix distingue les sauvegardes créées par le planificateur de
+// fond des sauvegardes manuelles (même nommage sinon) — seules celles-ci
+// sont candidates à la purge par rétention.
+const autoBackupPrefix = "finance-backup-auto-"
+
 type Service struct {
 	cfg config.Config
 	mu  sync.RWMutex
-	dir string
+
+	dir               string
+	autoBackupEnabled bool
+	retentionDays     int
+	lastAutoBackupAt  int64
 }
 
 func NewService(cfg config.Config, defaultDir string) (*Service, error) {
 	dir := defaultDir
-	if persisted, ok := loadPersistedDirectory(); ok {
-		dir = persisted
+	autoBackupEnabled := true
+	retentionDays := defaultRetentionDays
+	var lastAutoBackupAt int64
+
+	if persisted, ok := loadPersistedSettings(); ok {
+		dir = persisted.Directory
+		autoBackupEnabled = persisted.AutoBackupEnabled
+		retentionDays = persisted.RetentionDays
+		lastAutoBackupAt = persisted.LastAutoBackupAt
 	}
 
 	absDir, err := filepath.Abs(dir)
@@ -44,7 +60,25 @@ func NewService(cfg config.Config, defaultDir string) (*Service, error) {
 		return nil, err
 	}
 
-	return &Service{cfg: cfg, dir: absDir}, nil
+	return &Service{
+		cfg:               cfg,
+		dir:               absDir,
+		autoBackupEnabled: autoBackupEnabled,
+		retentionDays:     retentionDays,
+		lastAutoBackupAt:  lastAutoBackupAt,
+	}, nil
+}
+
+// persistedSnapshot copie l'état courant sous verrou, pour l'écrire dans
+// backup-settings.json sans jamais écraser un champ que l'appelant ne
+// modifie pas (le fichier est réécrit en entier à chaque sauvegarde).
+func (s *Service) persistedSnapshot() persistedSettings {
+	return persistedSettings{
+		Directory:         s.dir,
+		AutoBackupEnabled: s.autoBackupEnabled,
+		RetentionDays:     s.retentionDays,
+		LastAutoBackupAt:  s.lastAutoBackupAt,
+	}
 }
 
 // Directory returns the folder backups are currently read from/written to.
@@ -78,12 +112,57 @@ func (s *Service) SetDirectory(dir string) error {
 	}
 	os.Remove(probe)
 
-	if err := savePersistedDirectory(trimmed); err != nil {
+	s.mu.RLock()
+	snapshot := s.persistedSnapshot()
+	s.mu.RUnlock()
+	snapshot.Directory = trimmed
+
+	if err := savePersistedSettings(snapshot); err != nil {
 		return fmt.Errorf("échec de l'enregistrement du réglage: %w", err)
 	}
 
 	s.mu.Lock()
 	s.dir = trimmed
+	s.mu.Unlock()
+
+	return nil
+}
+
+// AutoBackupEnabled indique si la sauvegarde automatique quotidienne est activée.
+func (s *Service) AutoBackupEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.autoBackupEnabled
+}
+
+// RetentionDays indique combien de jours les sauvegardes automatiques sont conservées.
+func (s *Service) RetentionDays() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.retentionDays
+}
+
+// SetAutoBackupSettings active/désactive la sauvegarde automatique et fixe sa rétention.
+func (s *Service) SetAutoBackupSettings(enabled bool, retentionDays int) error {
+	if retentionDays <= 0 {
+		return errors.New("la rétention doit être d'au moins 1 jour")
+	}
+
+	s.mu.RLock()
+	snapshot := s.persistedSnapshot()
+	s.mu.RUnlock()
+	snapshot.AutoBackupEnabled = enabled
+	snapshot.RetentionDays = retentionDays
+
+	if err := savePersistedSettings(snapshot); err != nil {
+		return fmt.Errorf("échec de l'enregistrement du réglage: %w", err)
+	}
+
+	s.mu.Lock()
+	s.autoBackupEnabled = enabled
+	s.retentionDays = retentionDays
 	s.mu.Unlock()
 
 	return nil
@@ -192,6 +271,79 @@ func (s *Service) withPassword(cmd *exec.Cmd) {
 // Create dumps the full database to a new timestamped file and returns its metadata.
 func (s *Service) Create(ctx context.Context) (BackupFile, error) {
 	return s.dumpTo(ctx, fmt.Sprintf("finance-backup-%s%s", time.Now().Format("20060102-150405"), fileSuffix))
+}
+
+// CreateAuto est l'équivalent de Create pour le planificateur de fond — seul
+// le préfixe du nom de fichier diffère, afin que la purge par rétention
+// puisse cibler uniquement les sauvegardes automatiques.
+func (s *Service) CreateAuto(ctx context.Context) (BackupFile, error) {
+	return s.dumpTo(ctx, fmt.Sprintf("%s%s%s", autoBackupPrefix, time.Now().Format("20060102-150405"), fileSuffix))
+}
+
+// RunScheduledBackupIfDue exécute une sauvegarde automatique si elle est
+// activée et que la précédente date de plus de 24h, puis purge les
+// sauvegardes automatiques plus vieilles que la rétention configurée — la
+// purge tourne à CHAQUE appel (chaque heure), pas seulement lorsqu'une
+// nouvelle sauvegarde vient d'être créée, pour que la rétention reste
+// respectée en continu même si la création du jour a déjà eu lieu.
+// Un échec de création est simplement journalisé par l'appelant et retenté
+// au prochain passage horaire, sans mécanisme de retry séparé.
+func (s *Service) RunScheduledBackupIfDue(ctx context.Context) error {
+	s.mu.RLock()
+	enabled := s.autoBackupEnabled
+	lastAutoBackupAt := s.lastAutoBackupAt
+	retentionDays := s.retentionDays
+	s.mu.RUnlock()
+
+	if !enabled {
+		return nil
+	}
+
+	if lastAutoBackupAt == 0 || time.Since(time.Unix(lastAutoBackupAt, 0)) >= 24*time.Hour {
+		if _, err := s.CreateAuto(ctx); err != nil {
+			return err
+		}
+
+		s.mu.Lock()
+		s.lastAutoBackupAt = time.Now().Unix()
+		snapshot := s.persistedSnapshot()
+		s.mu.Unlock()
+
+		if err := savePersistedSettings(snapshot); err != nil {
+			return fmt.Errorf("échec de l'enregistrement du réglage: %w", err)
+		}
+	}
+
+	return s.pruneAutoBackups(retentionDays)
+}
+
+// pruneAutoBackups supprime les sauvegardes automatiques dont la date de
+// modification dépasse la rétention configurée — jamais les sauvegardes
+// manuelles ni les filets de sécurité pre-restore/upload.
+func (s *Service) pruneAutoBackups(retentionDays int) error {
+	entries, err := os.ReadDir(s.Directory())
+	if err != nil {
+		return err
+	}
+
+	cutoff := time.Duration(retentionDays) * 24 * time.Hour
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), autoBackupPrefix) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if time.Since(info.ModTime()) > cutoff {
+			_ = os.Remove(filepath.Join(s.Directory(), entry.Name()))
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) dumpTo(ctx context.Context, filename string) (BackupFile, error) {

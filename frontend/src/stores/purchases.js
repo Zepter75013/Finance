@@ -29,6 +29,7 @@ import {
   deleteAccount as deleteAccountApi,
 } from '../services/accounts'
 import { fetchStatements } from '../services/statements'
+import { findLatestLockedStatement, computeRealBalance } from '../utils/realBalance'
 
 export const usePurchasesStore = defineStore('purchases', () => {
   const purchases = ref([])
@@ -458,36 +459,22 @@ export const usePurchasesStore = defineStore('purchases', () => {
 
   // Le dernier relevé VERROUILLÉ (et non simplement le plus récent, qui
   // pourrait être un brouillon en cours de saisie) sert d'ancrage fiable —
-  // c'est un solde bancaire confirmé, pas une estimation.
-  const latestLockedStatement = computed(() => {
-    const locked = statements.value.filter((statement) => statement.is_locked)
-    if (!locked.length) return null
-
-    return [...locked].sort((a, b) => {
-      const dateA = new Date(a.period_end || a.statement_date || 0)
-      const dateB = new Date(b.period_end || b.statement_date || 0)
-      return dateB - dateA
-    })[0]
-  })
+  // c'est un solde bancaire confirmé, pas une estimation. Logique partagée
+  // avec la vue consolidée multi-comptes (utils/realBalance.js), qui
+  // recalcule la même chose pour chaque compte.
+  const latestLockedStatement = computed(() => findLatestLockedStatement(statements.value))
 
   // Solde réel = solde de fin du dernier relevé verrouillé + tous les achats/
   // revenus pas encore rattachés à un relevé (statementReference vide) — ce
   // sont les mouvements que la banque a déjà comptabilisés mais que le
   // pointage personnel n'a pas encore rapprochés d'un relevé précis.
-  const realCurrentBalance = computed(() => {
-    const anchor = latestLockedStatement.value
-    if (!anchor) return null
-
-    const unreconciledIncome = incomes.value
-      .filter((income) => !income.statementReference)
-      .reduce((sum, income) => sum + Number(income.amount || 0), 0)
-
-    const unreconciledExpense = purchases.value
-      .filter((purchase) => !purchase.statementReference)
-      .reduce((sum, purchase) => sum + Number(purchase.amount || 0), 0)
-
-    return Number(anchor.end_balance || 0) + unreconciledIncome - unreconciledExpense
-  })
+  const realCurrentBalance = computed(() =>
+    computeRealBalance({
+      statements: statements.value,
+      purchases: purchases.value.map((p) => ({ amount: p.amount, statement_reference: p.statementReference })),
+      incomes: incomes.value.map((i) => ({ amount: i.amount, statement_reference: i.statementReference })),
+    })
+  )
 
   async function loadCategories() {
     if (!activeAccountId.value) {

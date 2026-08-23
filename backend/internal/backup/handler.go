@@ -141,7 +141,17 @@ func (h *Handler) RestoreUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsPayload struct {
-	Directory string `json:"directory"`
+	Directory         string `json:"directory"`
+	AutoBackupEnabled bool   `json:"auto_backup_enabled"`
+	RetentionDays     int    `json:"retention_days"`
+}
+
+func (h *Handler) currentSettings() settingsPayload {
+	return settingsPayload{
+		Directory:         h.service.Directory(),
+		AutoBackupEnabled: h.service.AutoBackupEnabled(),
+		RetentionDays:     h.service.RetentionDays(),
+	}
 }
 
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +162,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(settingsPayload{Directory: h.service.Directory()})
+	_ = json.NewEncoder(w).Encode(h.currentSettings())
 }
 
 func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -172,9 +182,14 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.service.SetAutoBackupSettings(payload.AutoBackupEnabled, payload.RetentionDays); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(settingsPayload{Directory: h.service.Directory()})
+	_ = json.NewEncoder(w).Encode(h.currentSettings())
 }
 
 // PickDirectory opens a native macOS folder picker on the server's own

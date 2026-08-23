@@ -74,16 +74,26 @@ const backupDirectoryInput = ref('')
 const isSavingDirectory = ref(false)
 const isPickingDirectory = ref(false)
 
+const autoBackupEnabled = ref(true)
+const retentionDaysInput = ref(30)
+const isSavingAutoBackup = ref(false)
+
 async function loadBackupSettings() {
   try {
     const settings = await fetchBackupSettings()
     backupDirectory.value = settings.directory
     backupDirectoryInput.value = settings.directory
+    autoBackupEnabled.value = settings.auto_backup_enabled
+    retentionDaysInput.value = settings.retention_days
   } catch (err) {
     backupError.value = err instanceof Error ? err.message : 'Impossible de charger le dossier de sauvegarde.'
   }
 }
 
+// Envoie toujours l'état réactif complet des trois réglages (directory,
+// autoBackupEnabled, retentionDays) — le backend réécrit le fichier de
+// configuration en entier à chaque appel, donc n'envoyer que le champ
+// modifié réinitialiserait silencieusement les autres.
 async function handleSaveDirectory() {
   if (isSavingDirectory.value) return
 
@@ -92,7 +102,11 @@ async function handleSaveDirectory() {
   backupSuccess.value = ''
 
   try {
-    const settings = await updateBackupSettings(backupDirectoryInput.value)
+    const settings = await updateBackupSettings({
+      directory: backupDirectoryInput.value,
+      autoBackupEnabled: autoBackupEnabled.value,
+      retentionDays: retentionDaysInput.value,
+    })
     backupDirectory.value = settings.directory
     backupDirectoryInput.value = settings.directory
     backupSuccess.value = 'Dossier de sauvegarde mis à jour.'
@@ -102,6 +116,33 @@ async function handleSaveDirectory() {
   } finally {
     isSavingDirectory.value = false
   }
+}
+
+async function handleSaveAutoBackupSettings() {
+  if (isSavingAutoBackup.value) return
+
+  isSavingAutoBackup.value = true
+  backupError.value = ''
+  backupSuccess.value = ''
+
+  try {
+    const settings = await updateBackupSettings({
+      directory: backupDirectory.value,
+      autoBackupEnabled: autoBackupEnabled.value,
+      retentionDays: retentionDaysInput.value,
+    })
+    autoBackupEnabled.value = settings.auto_backup_enabled
+    retentionDaysInput.value = settings.retention_days
+    backupSuccess.value = 'Réglages de sauvegarde automatique mis à jour.'
+  } catch (err) {
+    backupError.value = err instanceof Error ? err.message : 'Impossible de mettre à jour les réglages de sauvegarde automatique.'
+  } finally {
+    isSavingAutoBackup.value = false
+  }
+}
+
+function isAutoBackup(backup) {
+  return backup.name.startsWith('finance-backup-auto-')
 }
 
 async function handlePickDirectory() {
@@ -475,6 +516,42 @@ onMounted(() => {
         </p>
       </div>
 
+      <div class="backup-auto-field">
+        <label class="backup-auto-toggle">
+          <input type="checkbox" v-model="autoBackupEnabled" />
+          <span>Sauvegarde automatique quotidienne</span>
+        </label>
+
+        <div v-if="autoBackupEnabled" class="backup-retention-row">
+          <label>
+            <span>Conserver</span>
+            <input
+              v-model.number="retentionDaysInput"
+              type="number"
+              min="1"
+              step="1"
+              class="backup-retention-input"
+            />
+            <span>jours</span>
+          </label>
+        </div>
+
+        <p class="backup-directory-hint">
+          Une sauvegarde est créée automatiquement chaque jour. Les sauvegardes automatiques
+          plus anciennes que la rétention choisie sont supprimées ; les sauvegardes créées
+          manuellement ne sont jamais supprimées automatiquement.
+        </p>
+
+        <button
+          class="ghost-btn"
+          type="button"
+          :disabled="isSavingAutoBackup"
+          @click="handleSaveAutoBackupSettings"
+        >
+          {{ isSavingAutoBackup ? 'Enregistrement...' : 'Enregistrer' }}
+        </button>
+      </div>
+
       <p v-if="isLoadingBackups" class="backups-empty">Chargement des sauvegardes...</p>
 
       <p v-else-if="!backups.length" class="backups-empty">
@@ -484,7 +561,10 @@ onMounted(() => {
       <div v-else class="backups-list">
         <article v-for="backup in backups" :key="backup.name" class="backup-row">
           <div class="backup-row-main">
-            <strong>{{ formatBackupDate(backup.created_at) }}</strong>
+            <strong>
+              {{ formatBackupDate(backup.created_at) }}
+              <span v-if="isAutoBackup(backup)" class="backup-auto-badge">Automatique</span>
+            </strong>
             <span class="backup-row-meta">{{ backup.name }} · {{ formatFileSize(backup.size_bytes) }}</span>
           </div>
 
@@ -703,6 +783,58 @@ onMounted(() => {
   .backup-directory-input-row {
     flex-direction: column;
   }
+}
+
+.backup-auto-field {
+  margin-top: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: rgba(var(--tint-rgb), 0.03);
+  border: 1px solid var(--line-soft, rgba(255, 255, 255, 0.05));
+  display: grid;
+  gap: 0.6rem;
+}
+
+.backup-auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-soft, #b3bbc4);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.backup-retention-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-soft, #b3bbc4);
+  font-size: 0.85rem;
+}
+
+.backup-retention-input {
+  width: 70px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--tint-rgb), 0.1);
+  background: rgba(var(--tint-rgb), 0.04);
+  color: var(--text, #eef1f3);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.backup-auto-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(94, 203, 143, 0.16);
+  color: #5ecb8f;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .backups-empty {
