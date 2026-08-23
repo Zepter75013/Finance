@@ -14,6 +14,9 @@ type User struct {
 	// une liste nulle/absente signifie "jamais configuré", donc accès à tous
 	// les comptes — voir account.Repository.UserCanAccess.
 	AccountIDs []uint64  `json:"account_ids"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// IsAdmin autorise la gestion des utilisateurs (créer/modifier/supprimer
+	// un utilisateur, assigner des comptes) — voir user.Handler.
+	IsAdmin   bool      `json:"is_admin"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

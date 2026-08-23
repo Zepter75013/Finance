@@ -1,21 +1,25 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import PageHero from '../Common/PageHero.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { useRecurringStore } from '../../stores/recurring'
 import {
-  fetchRecurring,
   createRecurring,
   updateRecurring,
   deleteRecurring,
   executeRecurringNow,
 } from '../../services/recurring'
-import { formatCurrency } from '../../utils/format'
+import { formatCurrency, formatDate } from '../../utils/format'
+import { daysUntil } from '../../utils/dates'
 
 const store = usePurchasesStore()
 const { accountsList, categoriesList } = storeToRefs(store)
+
+const recurringStore = useRecurringStore()
+const { items, isLoading, loadError, upcomingItems } = storeToRefs(recurringStore)
 
 const activeAccountId = computed({
   get: () => store.activeAccountId,
@@ -26,29 +30,9 @@ const availableCategories = computed(() =>
   categoriesList.value.filter((category) => category.type !== 'revenu')
 )
 
-const items = ref([])
-const isLoading = ref(false)
-const loadError = ref('')
-
 async function loadRecurring() {
-  if (!activeAccountId.value) {
-    items.value = []
-    return
-  }
-
-  isLoading.value = true
-  loadError.value = ''
-
-  try {
-    items.value = await fetchRecurring(activeAccountId.value)
-  } catch (err) {
-    loadError.value = err instanceof Error ? err.message : 'Impossible de charger les récurrences.'
-  } finally {
-    isLoading.value = false
-  }
+  await recurringStore.loadRecurring()
 }
-
-watch(activeAccountId, loadRecurring, { immediate: true })
 
 const sortedItems = computed(() => [...items.value].sort((a, b) => a.day_of_month - b.day_of_month))
 
@@ -56,21 +40,13 @@ function categoryName(categoryId) {
   return categoriesList.value.find((category) => category.id === categoryId)?.name || '—'
 }
 
-function formatNextRunDate(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
+function isOverdue(item) {
+  return daysUntil(item.next_run_date) <= 0
 }
 
-function isOverdue(item) {
-  const date = new Date(item.next_run_date)
-  if (Number.isNaN(date.getTime())) return false
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  return date <= today
+function dueInLabel(item) {
+  const days = daysUntil(item.next_run_date)
+  return days === 1 ? 'demain' : `dans ${days} jours`
 }
 
 const executingId = ref(null)
@@ -255,6 +231,26 @@ onMounted(loadRecurring)
 
     <p v-if="loadError" class="form-error">{{ loadError }}</p>
 
+    <section v-if="upcomingItems.length" class="panel upcoming-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">À venir</p>
+          <h2>{{ upcomingItems.length }} échéance{{ upcomingItems.length > 1 ? 's' : '' }} dans les 7 prochains jours</h2>
+        </div>
+      </div>
+
+      <div class="upcoming-list">
+        <article v-for="item in upcomingItems" :key="item.id" class="upcoming-row">
+          <span class="recurring-type-badge" :class="`recurring-type-${item.type}`">
+            {{ item.type === 'achat' ? 'Achat' : 'Revenu' }}
+          </span>
+          <span class="upcoming-row-name">{{ item.type === 'achat' ? item.merchant : item.source }}</span>
+          <span class="upcoming-row-meta">Échéance le {{ formatDate(item.next_run_date) }} ({{ dueInLabel(item) }})</span>
+          <strong class="upcoming-row-amount">{{ formatCurrency(item.amount) }}</strong>
+        </article>
+      </div>
+    </section>
+
     <section class="panel recurring-list-card">
       <p v-if="isLoading" class="recurring-empty">Chargement...</p>
 
@@ -273,7 +269,7 @@ onMounted(loadRecurring)
             <span class="recurring-row-meta">
               {{ item.type === 'achat' ? categoryName(item.category_id) : (item.category || '—') }}
               · le {{ item.day_of_month }} de chaque mois
-              · prochaine occurrence le {{ formatNextRunDate(item.next_run_date) }}
+              · prochaine occurrence le {{ formatDate(item.next_run_date) }}
               <span v-if="item.is_active && isOverdue(item)" class="recurring-overdue-badge">en retard</span>
             </span>
           </div>
@@ -432,6 +428,44 @@ onMounted(loadRecurring)
   padding: 0.1rem 0;
   outline: none;
   cursor: pointer;
+}
+
+.upcoming-card {
+  padding: 1.1rem;
+}
+
+.upcoming-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(var(--tint-rgb), 0.028);
+  border: 1px solid rgba(var(--tint-rgb), 0.05);
+  flex-wrap: wrap;
+}
+
+.upcoming-row-name {
+  color: var(--text, #eef1f3);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.upcoming-row-meta {
+  color: var(--text-dim, #8a939d);
+  font-size: 0.78rem;
+  flex: 1;
+}
+
+.upcoming-row-amount {
+  color: var(--text, #eef1f3);
+  font-size: 0.9rem;
 }
 
 .recurring-list-card {

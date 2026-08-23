@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"finance/backend/internal/account"
+	"finance/backend/internal/auditlog"
 	"finance/backend/internal/auth"
 	"finance/backend/internal/backup"
 	"finance/backend/internal/category"
@@ -71,16 +72,19 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 	mailerClient := mailer.New(cfg)
 	authHandler := auth.NewHandler(sessionRepo, userRepo, mailerClient)
 
+	auditRepo := auditlog.NewRepository(db)
+	auditHandler := auditlog.NewHandler(auditRepo)
+
 	mux.HandleFunc("/health", healthHandler(cfg.DBDriver))
 
 	mux.HandleFunc("/auth/login", authHandler.Login)
 	mux.HandleFunc("/auth/logout", authHandler.Logout)
 	mux.HandleFunc("/auth/me", authHandler.Me)
-	mux.HandleFunc("/auth/change-password", requireAuth(sessionRepo, authHandler.ChangePassword))
+	mux.HandleFunc("/auth/change-password", requireAuth(sessionRepo, userRepo, auditRepo, authHandler.ChangePassword))
 	mux.HandleFunc("/auth/request-reset-code", authHandler.RequestResetCode)
 	mux.HandleFunc("/auth/reset-password-with-code", authHandler.ResetPasswordWithCode)
 
-	mux.HandleFunc("/accounts", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/accounts", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			accountHandler.List(w, r)
@@ -93,7 +97,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/accounts/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/accounts/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			accountHandler.Update(w, r)
@@ -106,7 +110,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/categories", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/categories", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			categoryHandler.List(w, r)
@@ -119,7 +123,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/categories/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/categories/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			categoryHandler.Update(w, r)
@@ -132,7 +136,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/subcategories", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/subcategories", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			subCategoryHandler.List(w, r)
@@ -145,7 +149,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/subcategories/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/subcategories/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			subCategoryHandler.Update(w, r)
@@ -158,7 +162,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/purchases", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/purchases", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			purchaseHandler.List(w, r)
@@ -171,7 +175,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/purchases/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/purchases/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			purchaseHandler.Update(w, r)
@@ -184,7 +188,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/incomes", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/incomes", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			incomeHandler.List(w, r)
@@ -197,7 +201,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/incomes/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/incomes/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			incomeHandler.Update(w, r)
@@ -210,7 +214,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/statements", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/statements", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			statementHandler.List(w, r)
@@ -223,7 +227,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/recurring", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/recurring", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			recurringHandler.List(w, r)
@@ -236,7 +240,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/recurring/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/recurring/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/execute") {
 			switch r.Method {
 			case http.MethodPost:
@@ -261,7 +265,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/statements/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/statements/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/pdfs") {
 			hasPdfID := strings.Contains(r.URL.Path, "/pdfs/")
 
@@ -294,7 +298,9 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/users", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/audit-log", requireAuth(sessionRepo, userRepo, auditRepo, auditHandler.List))
+
+	mux.HandleFunc("/users", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			userHandler.List(w, r)
@@ -307,7 +313,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/users/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/users/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			userHandler.Update(w, r)
@@ -320,7 +326,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/backups", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/backups", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			backupHandler.List(w, r)
@@ -333,7 +339,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/backups/restore-upload", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/backups/restore-upload", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			backupHandler.RestoreUpload(w, r)
@@ -344,7 +350,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/backups/settings", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/backups/settings", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			backupHandler.GetSettings(w, r)
@@ -357,7 +363,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/backups/settings/pick-directory", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/backups/settings/pick-directory", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			backupHandler.PickDirectory(w, r)
@@ -368,7 +374,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/settings/database", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/settings/database", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			dbSettingsHandler.Get(w, r)
@@ -381,7 +387,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/backups/", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/backups/", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			backupHandler.Download(w, r)
@@ -396,7 +402,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/reports", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/reports", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			reportHandler.Upload(w, r)
@@ -407,7 +413,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/reports/latest", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/reports/latest", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			reportHandler.GetLatestMetadata(w, r)
@@ -418,7 +424,7 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 		}
 	}))
 
-	mux.HandleFunc("/reports/latest/pdf", requireAuth(sessionRepo, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/reports/latest/pdf", requireAuth(sessionRepo, userRepo, auditRepo, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			reportHandler.DownloadLatestPdf(w, r)

@@ -4,8 +4,10 @@ import { storeToRefs } from 'pinia'
 import { createUser, updateUser } from '../../services/users'
 import { resizeAvatarFile } from '../../utils/avatar'
 import { usePurchasesStore } from '../../stores/purchases'
+import { useAuthStore } from '../../stores/auth'
 
 const { accountsList } = storeToRefs(usePurchasesStore())
+const authStore = useAuthStore()
 
 const props = defineProps({
   modelValue: {
@@ -31,6 +33,7 @@ const initialForm = () => ({
   confirmPassword: '',
   isAccountRestricted: Array.isArray(props.user?.account_ids),
   accountIds: Array.isArray(props.user?.account_ids) ? [...props.user.account_ids] : [],
+  isAdmin: props.user?.is_admin ?? false,
 })
 
 const form = reactive(initialForm())
@@ -136,13 +139,19 @@ async function submitForm() {
     let saved
 
     if (isEditMode.value) {
-      saved = await updateUser(props.user.id, {
+      const payload = {
         username,
         first_name: firstName,
         last_name: lastName,
         avatar_url: form.avatarUrl,
-        account_ids: accountIds,
-      })
+      }
+
+      if (authStore.isAdmin) {
+        payload.account_ids = accountIds
+        payload.is_admin = form.isAdmin
+      }
+
+      saved = await updateUser(props.user.id, payload)
     } else {
       saved = await createUser({
         username,
@@ -151,6 +160,7 @@ async function submitForm() {
         avatar_url: form.avatarUrl,
         password: form.password,
         account_ids: accountIds,
+        is_admin: form.isAdmin,
       })
     }
 
@@ -246,33 +256,44 @@ async function submitForm() {
           />
         </label>
 
-        <div class="accounts-field">
+        <template v-if="authStore.isAdmin">
           <label class="accounts-toggle">
-            <input type="checkbox" v-model="form.isAccountRestricted" />
-            <span>Restreindre l'accès à certains comptes</span>
+            <input type="checkbox" v-model="form.isAdmin" />
+            <span>Administrateur</span>
           </label>
 
           <p class="accounts-hint">
-            Non coché : cet utilisateur voit tous les comptes, y compris ceux créés plus tard.
+            Peut créer, modifier et supprimer des utilisateurs et leurs comptes assignés.
           </p>
 
-          <div v-if="form.isAccountRestricted" class="accounts-checklist">
-            <label
-              v-for="account in accountsList"
-              :key="account.id"
-              class="accounts-checklist-item"
-            >
-              <input
-                type="checkbox"
-                :checked="form.accountIds.includes(account.id)"
-                @change="toggleAccount(account.id)"
-              />
-              <span>{{ account.name }}</span>
+          <div class="accounts-field">
+            <label class="accounts-toggle">
+              <input type="checkbox" v-model="form.isAccountRestricted" />
+              <span>Restreindre l'accès à certains comptes</span>
             </label>
 
-            <p v-if="!accountsList.length" class="accounts-hint">Aucun compte disponible.</p>
+            <p class="accounts-hint">
+              Non coché : cet utilisateur voit tous les comptes, y compris ceux créés plus tard.
+            </p>
+
+            <div v-if="form.isAccountRestricted" class="accounts-checklist">
+              <label
+                v-for="account in accountsList"
+                :key="account.id"
+                class="accounts-checklist-item"
+              >
+                <input
+                  type="checkbox"
+                  :checked="form.accountIds.includes(account.id)"
+                  @change="toggleAccount(account.id)"
+                />
+                <span>{{ account.name }}</span>
+              </label>
+
+              <p v-if="!accountsList.length" class="accounts-hint">Aucun compte disponible.</p>
+            </div>
           </div>
-        </div>
+        </template>
 
         <template v-if="!isEditMode">
           <label class="form-field">

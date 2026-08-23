@@ -106,6 +106,7 @@ var sqliteSchemaStatements = []string{
 		avatar_url TEXT,
 		password_hash TEXT NOT NULL,
 		accounts_restricted INTEGER NOT NULL DEFAULT 0,
+		is_admin INTEGER NOT NULL DEFAULT 0,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
@@ -155,6 +156,19 @@ var sqliteSchemaStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_recurring_account_id ON recurring_transactions (account_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_recurring_next_run_date ON recurring_transactions (next_run_date)`,
+	`CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
+		username TEXT NOT NULL,
+		method TEXT NOT NULL,
+		path TEXT NOT NULL,
+		entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL DEFAULT '',
+		status_code INTEGER NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log (created_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log (user_id)`,
 	// Un compte par défaut est indispensable : achats/revenus/catégories
 	// exigent tous un account_id, l'app serait inutilisable sans au moins un
 	// compte existant dès le premier démarrage sur une base vierge.

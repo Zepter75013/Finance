@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 
 import { usePurchasesStore } from './stores/purchases'
 import { useAuthStore } from './stores/auth'
+import { useRecurringStore } from './stores/recurring'
 
 import AppSidebar from './components/layout/AppSidebar.vue'
 import LoginView from './components/auth/LoginView.vue'
@@ -28,12 +29,14 @@ import ImportView from './components/import/ImportView.vue'
 import ImportCategoriesView from './components/categories/ImportCategoriesView.vue'
 import ReportsView from './components/reports/ReportsView.vue'
 import UsersView from './components/settings/UsersView.vue'
+import AuditLogView from './components/auditlog/AuditLogView.vue'
 import PreferencesView from './components/settings/PreferencesView.vue'
 import { useThemeStore } from './stores/theme'
 import { useIdleTimeout } from './composables/useIdleTimeout'
 
 const purchasesStore = usePurchasesStore()
 const authStore = useAuthStore()
+const recurringStore = useRecurringStore()
 useThemeStore()
 
 const { isAuthenticated, isCheckingSession, username, avatarUrl } = storeToRefs(authStore)
@@ -109,6 +112,7 @@ watch(isAuthenticated, (authenticated) => {
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && isAuthenticated.value) {
     purchasesStore.loadPurchases()
+    recurringStore.loadRecurring()
   }
 }
 
@@ -529,9 +533,14 @@ function handleBulkDeleted(result) {
 
         <UsersView v-else-if="activeView === 'users'" />
 
+        <AuditLogView v-else-if="activeView === 'audit-log'" />
+
         <PreferencesView v-else-if="activeView === 'preferences'" />
 
-        <DashboardView v-else-if="activeView === 'dashboard'" />
+        <DashboardView
+          v-else-if="activeView === 'dashboard'"
+          @open-recurring="navigateTo('recurring')"
+        />
 
         <MonthlyOverviewView v-else-if="activeView === 'monthly'" />
 

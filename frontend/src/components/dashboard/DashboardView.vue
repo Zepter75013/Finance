@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import PageHero from '../Common/PageHero.vue'
@@ -7,7 +7,10 @@ import CircularProgress from '../Common/CircularProgress.vue'
 import DashboardCharts from './DashboardCharts.vue'
 import CategorySubTrendGrid from './CategorySubTrendGrid.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { useRecurringStore } from '../../stores/recurring'
 import { formatCurrency } from '../../utils/format'
+
+const emit = defineEmits(['open-recurring'])
 
 const store = usePurchasesStore()
 const {
@@ -20,6 +23,14 @@ const {
   realCurrentBalance,
   latestLockedStatement,
 } = storeToRefs(store)
+
+const recurringStore = useRecurringStore()
+const { overdueItems: overdueRecurringItems, upcomingItems: upcomingRecurringItems } =
+  storeToRefs(recurringStore)
+
+onMounted(() => {
+  recurringStore.loadRecurring()
+})
 
 const budgetUsedPercent = computed(() => {
   if (!currentMonthExpenseBudget.value) return 0
@@ -47,6 +58,48 @@ function dismissBudgetAlert() {
 const activeAccountId = computed({
   get: () => store.activeAccountId,
   set: (value) => store.setActiveAccountId(value),
+})
+
+// Contrairement à la bannière de budget (masquée par mois), le statut d'une
+// récurrence peut changer n'importe quel jour — on retient donc les id déjà
+// vus plutôt qu'une période fixe : la bannière réapparaît dès qu'un nouvel
+// id (nouveau retard, nouvelle échéance à moins de 7 jours) apparaît. La clé
+// est namespacée par compte car les id de récurrence sont globaux, pas par
+// compte.
+function recurringDismissedKey() {
+  return `recurringAlertDismissedIds:${activeAccountId.value}`
+}
+
+const dismissedRecurringIds = ref(JSON.parse(localStorage.getItem(recurringDismissedKey()) || '[]'))
+
+watch(activeAccountId, () => {
+  dismissedRecurringIds.value = JSON.parse(localStorage.getItem(recurringDismissedKey()) || '[]')
+})
+
+const recurringAlertIds = computed(() =>
+  [...overdueRecurringItems.value, ...upcomingRecurringItems.value].map((item) => item.id).sort((a, b) => a - b)
+)
+
+const showRecurringAlert = computed(() => {
+  const dismissedSet = new Set(dismissedRecurringIds.value)
+  return recurringAlertIds.value.some((id) => !dismissedSet.has(id))
+})
+
+function dismissRecurringAlert() {
+  dismissedRecurringIds.value = recurringAlertIds.value
+  localStorage.setItem(recurringDismissedKey(), JSON.stringify(recurringAlertIds.value))
+}
+
+const recurringAlertText = computed(() => {
+  const overdueCount = overdueRecurringItems.value.length
+  const upcomingCount = upcomingRecurringItems.value.length
+  const total = overdueCount + upcomingCount
+
+  const parts = []
+  if (overdueCount) parts.push(`${overdueCount} en retard`)
+  if (upcomingCount) parts.push(`${upcomingCount} dans les 7 prochains jours`)
+
+  return `${total} échéance${total > 1 ? 's' : ''} récurrente${total > 1 ? 's' : ''} à traiter : ${parts.join(', ')}.`
 })
 
 function yearOf(dateStr) {
@@ -150,6 +203,13 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
         Budget dépassé ce mois-ci de <strong>{{ formatCurrency(-currentMonthBudgetRemaining) }}</strong>.
       </p>
       <button class="ghost-btn" type="button" @click="dismissBudgetAlert">Masquer</button>
+    </div>
+
+    <div v-if="showRecurringAlert" class="budget-alert">
+      <span class="budget-alert-icon" aria-hidden="true">📅</span>
+      <p>{{ recurringAlertText }}</p>
+      <button class="ghost-btn" type="button" @click="emit('open-recurring')">Voir</button>
+      <button class="ghost-btn" type="button" @click="dismissRecurringAlert">Masquer</button>
     </div>
 
     <section class="dashboard-stats-grid">

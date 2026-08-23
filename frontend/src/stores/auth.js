@@ -11,6 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const id = ref(null)
   const username = ref('')
   const avatarUrl = ref('')
+  const isAdmin = ref(false)
   const isAuthenticated = ref(false)
   const isCheckingSession = ref(true)
 
@@ -18,6 +19,7 @@ export const useAuthStore = defineStore('auth', () => {
     id.value = account?.id ?? null
     username.value = account?.username ?? ''
     avatarUrl.value = account?.avatar_url ?? ''
+    isAdmin.value = account?.is_admin ?? false
   }
 
   async function checkSession() {
@@ -68,6 +70,7 @@ export const useAuthStore = defineStore('auth', () => {
     id,
     username,
     avatarUrl,
+    isAdmin,
     isAuthenticated,
     isCheckingSession,
     checkSession,

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"finance/backend/internal/authctx"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -36,6 +38,25 @@ func NewHandler(repo *Repository) *Handler {
 	return &Handler{repo: repo}
 }
 
+// callerIsAdmin résout l'utilisateur authentifié de la requête et indique
+// s'il a le rôle admin. La gestion des utilisateurs se fait au niveau du
+// handler (pas de la middleware) pour rester cohérent avec le reste du
+// projet (ex: account.Repository.UserCanAccess appelé localement dans
+// chaque handler concerné).
+func (h *Handler) callerIsAdmin(r *http.Request) (User, bool) {
+	callerID, ok := authctx.UserID(r.Context())
+	if !ok {
+		return User{}, false
+	}
+
+	caller, err := h.repo.FindByID(r.Context(), callerID)
+	if err != nil {
+		return User{}, false
+	}
+
+	return caller, caller.IsAdmin
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -60,6 +81,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, isAdmin := h.callerIsAdmin(r); !isAdmin {
+		http.Error(w, "réservé aux administrateurs", http.StatusForbidden)
+		return
+	}
+
 	var payload struct {
 		Username   string    `json:"username"`
 		FirstName  string    `json:"first_name"`
@@ -67,6 +93,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		AvatarURL  string    `json:"avatar_url"`
 		Password   string    `json:"password"`
 		AccountIDs *[]uint64 `json:"account_ids"`
+		IsAdmin    bool      `json:"is_admin"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -113,7 +140,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.repo.Create(r.Context(), payload.Username, payload.FirstName, payload.LastName, avatarURL, string(hash), payload.AccountIDs)
+	created, err := h.repo.Create(r.Context(), payload.Username, payload.FirstName, payload.LastName, avatarURL, string(hash), payload.AccountIDs, payload.IsAdmin)
 	if err != nil {
 		http.Error(w, "échec de la création", http.StatusInternalServerError)
 		return
@@ -138,12 +165,19 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	caller, isAdmin := h.callerIsAdmin(r)
+	if !isAdmin && caller.ID != id {
+		http.Error(w, "réservé aux administrateurs", http.StatusForbidden)
+		return
+	}
+
 	var payload struct {
 		Username   string    `json:"username"`
 		FirstName  string    `json:"first_name"`
 		LastName   string    `json:"last_name"`
 		AvatarURL  string    `json:"avatar_url"`
 		AccountIDs *[]uint64 `json:"account_ids"`
+		IsAdmin    *bool     `json:"is_admin"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -179,7 +213,43 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.repo.Update(r.Context(), id, payload.Username, payload.FirstName, payload.LastName, avatarURL, payload.AccountIDs)
+	// Un utilisateur qui n'est pas déjà admin ne peut jamais s'accorder de
+	// comptes supplémentaires ni le rôle admin lui-même, même sur son propre
+	// profil (pas d'auto-élévation de privilège).
+	accountIDs := payload.AccountIDs
+	targetIsAdmin := payload.IsAdmin
+	if !isAdmin {
+		accountIDs = nil
+		targetIsAdmin = nil
+	}
+
+	if targetIsAdmin != nil && !*targetIsAdmin {
+		target, err := h.repo.FindByID(r.Context(), id)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "utilisateur introuvable", http.StatusNotFound)
+				return
+			}
+
+			http.Error(w, "échec de la mise à jour", http.StatusInternalServerError)
+			return
+		}
+
+		if target.IsAdmin {
+			adminCount, err := h.repo.CountAdmins(r.Context())
+			if err != nil {
+				http.Error(w, "échec de la mise à jour", http.StatusInternalServerError)
+				return
+			}
+
+			if adminCount <= 1 {
+				http.Error(w, "impossible de rétrograder le dernier administrateur", http.StatusConflict)
+				return
+			}
+		}
+	}
+
+	updated, err := h.repo.Update(r.Context(), id, payload.Username, payload.FirstName, payload.LastName, avatarURL, accountIDs, targetIsAdmin)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "utilisateur introuvable", http.StatusNotFound)
@@ -202,6 +272,11 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, isAdmin := h.callerIsAdmin(r); !isAdmin {
+		http.Error(w, "réservé aux administrateurs", http.StatusForbidden)
+		return
+	}
+
 	idStr := strings.TrimPrefix(r.URL.Path, "/users/")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -218,6 +293,30 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	if count <= 1 {
 		http.Error(w, "impossible de supprimer le dernier compte", http.StatusConflict)
 		return
+	}
+
+	target, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "utilisateur introuvable", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	if target.IsAdmin {
+		adminCount, err := h.repo.CountAdmins(r.Context())
+		if err != nil {
+			http.Error(w, "failed to delete user", http.StatusInternalServerError)
+			return
+		}
+
+		if adminCount <= 1 {
+			http.Error(w, "impossible de supprimer le dernier administrateur", http.StatusConflict)
+			return
+		}
 	}
 
 	if err := h.repo.Delete(r.Context(), id); err != nil {

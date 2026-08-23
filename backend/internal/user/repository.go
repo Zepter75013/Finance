@@ -24,6 +24,17 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+func (r *Repository) CountAdmins(ctx context.Context) (int, error) {
+	var count int
+
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
 // accountIDsOf charge les comptes assignés à un utilisateur — une requête
 // par utilisateur, volontairement simple vu le faible nombre d'utilisateurs
 // de cette application.
@@ -54,7 +65,7 @@ func (r *Repository) accountIDsOf(ctx context.Context, userID uint64) ([]uint64,
 
 func (r *Repository) List(ctx context.Context) ([]User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
 		FROM users
 		ORDER BY username ASC
 	`
@@ -79,6 +90,7 @@ func (r *Repository) List(ctx context.Context) ([]User, error) {
 			&u.AvatarURL,
 			&u.PasswordHash,
 			&restricted,
+			&u.IsAdmin,
 			&u.CreatedAt,
 			&u.UpdatedAt,
 		); err != nil {
@@ -124,12 +136,13 @@ func (r *Repository) Delete(ctx context.Context, id uint64) error {
 
 func (r *Repository) FindByUsername(ctx context.Context, username string) (User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
 		FROM users
 		WHERE username = ?
 	`
 
 	var u User
+	var restricted bool
 
 	err := r.db.QueryRowContext(ctx, query, username).Scan(
 		&u.ID,
@@ -138,11 +151,22 @@ func (r *Repository) FindByUsername(ctx context.Context, username string) (User,
 		&u.LastName,
 		&u.AvatarURL,
 		&u.PasswordHash,
+		&restricted,
+		&u.IsAdmin,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)
 	if err != nil {
 		return User{}, err
+	}
+
+	if restricted {
+		accountIDs, err := r.accountIDsOf(ctx, u.ID)
+		if err != nil {
+			return User{}, err
+		}
+
+		u.AccountIDs = accountIDs
 	}
 
 	return u, nil
@@ -185,13 +209,13 @@ func (r *Repository) setAccountAssignments(ctx context.Context, userID uint64, a
 	return tx.Commit()
 }
 
-func (r *Repository) Create(ctx context.Context, username, firstName, lastName string, avatarURL *string, passwordHash string, accountIDs *[]uint64) (User, error) {
+func (r *Repository) Create(ctx context.Context, username, firstName, lastName string, avatarURL *string, passwordHash string, accountIDs *[]uint64, isAdmin bool) (User, error) {
 	query := `
-		INSERT INTO users (username, first_name, last_name, avatar_url, password_hash)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO users (username, first_name, last_name, avatar_url, password_hash, is_admin)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.ExecContext(ctx, query, username, firstName, lastName, avatarURL, passwordHash)
+	result, err := r.db.ExecContext(ctx, query, username, firstName, lastName, avatarURL, passwordHash, isAdmin)
 	if err != nil {
 		return User{}, err
 	}
@@ -208,14 +232,27 @@ func (r *Repository) Create(ctx context.Context, username, firstName, lastName s
 	return r.FindByID(ctx, uint64(id))
 }
 
-func (r *Repository) Update(ctx context.Context, id uint64, username, firstName, lastName string, avatarURL *string, accountIDs *[]uint64) (User, error) {
+// Update modifie le profil d'un utilisateur. isAdmin à nil laisse le statut
+// admin inchangé (cas d'une auto-édition de profil par un non-admin, qui ne
+// doit jamais pouvoir s'accorder ce privilège lui-même).
+func (r *Repository) Update(ctx context.Context, id uint64, username, firstName, lastName string, avatarURL *string, accountIDs *[]uint64, isAdmin *bool) (User, error) {
 	query := `
 		UPDATE users
 		SET username = ?, first_name = ?, last_name = ?, avatar_url = ?
 		WHERE id = ?
 	`
+	args := []any{username, firstName, lastName, avatarURL, id}
 
-	result, err := r.db.ExecContext(ctx, query, username, firstName, lastName, avatarURL, id)
+	if isAdmin != nil {
+		query = `
+			UPDATE users
+			SET username = ?, first_name = ?, last_name = ?, avatar_url = ?, is_admin = ?
+			WHERE id = ?
+		`
+		args = []any{username, firstName, lastName, avatarURL, *isAdmin, id}
+	}
+
+	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return User{}, err
 	}
@@ -258,7 +295,7 @@ func (r *Repository) UpdatePassword(ctx context.Context, id uint64, passwordHash
 
 func (r *Repository) FindByID(ctx context.Context, id uint64) (User, error) {
 	query := `
-		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, created_at, updated_at
+		SELECT id, username, first_name, last_name, avatar_url, password_hash, accounts_restricted, is_admin, created_at, updated_at
 		FROM users
 		WHERE id = ?
 	`
@@ -274,6 +311,7 @@ func (r *Repository) FindByID(ctx context.Context, id uint64) (User, error) {
 		&u.AvatarURL,
 		&u.PasswordHash,
 		&restricted,
+		&u.IsAdmin,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)

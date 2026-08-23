@@ -111,7 +111,7 @@ async function confirmDelete() {
       title="Utilisateurs"
       description="Définis les personnes qui ont accès à cette application."
     >
-      <template #actions>
+      <template v-if="authStore.isAdmin" #actions>
         <button class="primary-btn" type="button" @click="openCreateModal">
           + Nouvel utilisateur
         </button>
@@ -152,6 +152,7 @@ async function confirmDelete() {
 
           <div class="user-row-actions">
             <button
+              v-if="authStore.isAdmin || account.username === authStore.username"
               class="icon-btn"
               type="button"
               title="Modifier cet utilisateur"
@@ -179,6 +180,7 @@ async function confirmDelete() {
             </button>
 
             <button
+              v-if="authStore.isAdmin"
               class="icon-btn icon-btn-danger"
               type="button"
               :disabled="account.username === authStore.username || !canDeleteLast"

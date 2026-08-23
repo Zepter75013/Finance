@@ -156,6 +156,7 @@ func accountSummary(account user.User) map[string]any {
 		"first_name": account.FirstName,
 		"last_name":  account.LastName,
 		"avatar_url": account.AvatarURL,
+		"is_admin":   account.IsAdmin,
 	}
 }
 

@@ -33,6 +33,7 @@ const ICON_EMOJI = {
   'import-transactions': '🧾',
   reports: '📈',
   users: '👥',
+  'audit-log': '📜',
   preferences: '⚙️',
   reconciliation: '✅',
   about: 'ℹ️',
@@ -51,6 +52,7 @@ const ICON_COLORS = {
   'import-transactions': '#5cc8d1',
   reports: '#e0c15c',
   users: '#f0796a',
+  'audit-log': '#9aa5b1',
   preferences: '#9aa5b1',
   reconciliation: '#4fd1c5',
   about: '#8fa8a0',
@@ -78,6 +80,7 @@ const navItems = [
   },
   { key: 'reports', label: 'Éditions', icon: 'reports' },
   { key: 'users', label: 'Utilisateurs', icon: 'users' },
+  { key: 'audit-log', label: 'Journal d’audit', icon: 'audit-log' },
   { key: 'preferences', label: 'Préférences', icon: 'preferences' },
   { key: 'about', label: 'À propos', icon: 'about', action: 'about' },
 ]

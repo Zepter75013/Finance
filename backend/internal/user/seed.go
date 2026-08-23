@@ -28,6 +28,6 @@ func EnsureAdmin(ctx context.Context, repo *Repository, username, password strin
 		return err
 	}
 
-	_, err = repo.Create(ctx, username, "", "", nil, string(hash), nil)
+	_, err = repo.Create(ctx, username, "", "", nil, string(hash), nil, true)
 	return err
 }
