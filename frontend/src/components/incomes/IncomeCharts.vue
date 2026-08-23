@@ -382,7 +382,7 @@ function toggleSelectedMonth(monthIndex) {
       <div class="fin-hero-grid">
         <div class="fin-hero-copy">
           <div class="fin-hero-copy-top">
-            <p class="fin-kicker">Fintech prestige</p>
+            <p class="fin-kicker">Pilotage des revenus</p>
             <button
               class="fin-collapse-toggle"
               type="button"
@@ -392,10 +392,10 @@ function toggleSelectedMonth(monthIndex) {
               {{ isCollapsed ? 'Afficher' : 'Masquer' }}
             </button>
           </div>
-          <h2>Un dashboard premium, plus net, plus analytique, plus vivant</h2>
+          <h2>Comprendre d'où vient votre argent, mois après mois</h2>
           <p class="fin-hero-text">
-            Cette version vise un rendu plus produit : hiérarchie plus forte, lecture plus directe
-            et meilleure mise en valeur des signaux financiers sans casser la sobriété générale.
+            Filtrez par période ou source, comparez les mois entre eux et repérez rapidement
+            les rentrées qui pèsent le plus dans votre budget.
           </p>
 
           <div class="fin-hero-chips">
