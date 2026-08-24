@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { requestResetCode, resetPasswordWithCode } from '../../services/auth'
 import { fetchHealth } from '../../services/purchases'
@@ -23,65 +23,8 @@ async function loadDbDriverLabel() {
   }
 }
 
-const matrixCanvas = ref(null)
-let matrixTickInterval = null
-let matrixResizeHandler = null
-
-// Grille de chiffres façon "Numbers" de Kraftwerk : pas de chute continue,
-// toute la grille change en même temps, au tempo, comme un afficheur mécanique.
-function startNumberGrid(canvas) {
-  const ctx = canvas.getContext('2d')
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (prefersReducedMotion) return
-
-  const fontSize = 24
-  const cellWidth = fontSize * 1.5
-  const cellHeight = fontSize * 1.7
-  let columns = 0
-  let rows = 0
-
-  function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
-    columns = Math.ceil(canvas.width / cellWidth)
-    rows = Math.ceil(canvas.height / cellHeight)
-  }
-
-  resize()
-  matrixResizeHandler = resize
-  window.addEventListener('resize', matrixResizeHandler)
-
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.font = `700 ${fontSize}px "Courier New", monospace`
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < columns; col++) {
-        const digit = Math.floor(Math.random() * 10).toString()
-        const x = col * cellWidth + cellWidth / 2
-        const y = row * cellHeight + cellHeight / 2
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.16)'
-        ctx.fillText(digit, x, y)
-      }
-    }
-  }
-
-  draw()
-  matrixTickInterval = setInterval(draw, 550)
-}
-
 onMounted(() => {
-  if (matrixCanvas.value) startNumberGrid(matrixCanvas.value)
   loadDbDriverLabel()
-})
-
-onBeforeUnmount(() => {
-  if (matrixTickInterval) clearInterval(matrixTickInterval)
-  if (matrixResizeHandler) window.removeEventListener('resize', matrixResizeHandler)
 })
 
 // 'login' | 'forgot-request' | 'forgot-verify'
@@ -231,16 +174,77 @@ async function handleResetPassword() {
   <main class="login-shell">
     <div class="login-glow" aria-hidden="true"></div>
 
-    <canvas ref="matrixCanvas" class="matrix-rain" aria-hidden="true"></canvas>
-
     <section class="login-card">
+      <img :src="loginLogo" alt="Charlie digital" class="login-parent-logo" />
+      <p class="login-version">v{{ APP_VERSION }}<span v-if="dbDriverLabel"> · {{ dbDriverLabel }}</span></p>
+
       <div class="login-brand">
         <div class="login-logo-wrap">
-          <img :src="loginLogo" alt="Charlie digital" class="login-logo-image" />
+          <svg class="login-hero-svg" viewBox="0 0 400 400" aria-hidden="true">
+            <defs>
+              <radialGradient id="hero-coin" cx="35%" cy="32%" r="75%">
+                <stop offset="0%" stop-color="#f3d98a" />
+                <stop offset="55%" stop-color="#d4af37" />
+                <stop offset="100%" stop-color="#9c7a1f" />
+              </radialGradient>
+              <radialGradient id="hero-coin-small" cx="35%" cy="32%" r="75%">
+                <stop offset="0%" stop-color="#eef1f3" />
+                <stop offset="60%" stop-color="#b9c2cc" />
+                <stop offset="100%" stop-color="#727d8a" />
+              </radialGradient>
+              <linearGradient id="hero-bill" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#5fae7f" />
+                <stop offset="100%" stop-color="#2f7a52" />
+              </linearGradient>
+              <filter id="hero-blur">
+                <feGaussianBlur stdDeviation="14" />
+              </filter>
+            </defs>
+
+            <g class="hero-splash" filter="url(#hero-blur)">
+              <ellipse cx="120" cy="120" rx="95" ry="80" fill="#2f7a52" />
+              <ellipse cx="300" cy="110" rx="80" ry="70" fill="#d4af37" />
+              <ellipse cx="230" cy="300" rx="100" ry="85" fill="#3f9db0" />
+              <ellipse cx="90" cy="290" rx="70" ry="60" fill="#2f7a52" />
+            </g>
+
+            <g class="hero-bill" transform="translate(70 165) rotate(-20)">
+              <rect x="0" y="0" width="150" height="86" rx="8" fill="url(#hero-bill)" />
+              <rect x="6" y="6" width="138" height="74" rx="5" class="hero-bill-border" />
+              <circle cx="38" cy="43" r="24" class="hero-bill-portrait" />
+              <text x="118" y="52" class="hero-bill-value">50</text>
+            </g>
+
+            <g class="hero-bill" transform="translate(180 150) rotate(16)">
+              <rect x="0" y="0" width="140" height="80" rx="8" fill="url(#hero-bill)" />
+              <rect x="6" y="6" width="128" height="68" rx="5" class="hero-bill-border" />
+              <circle cx="36" cy="40" r="22" class="hero-bill-portrait" />
+              <text x="108" y="48" class="hero-bill-value">20</text>
+            </g>
+
+            <circle cx="200" cy="200" r="88" fill="url(#hero-coin)" class="hero-coin" />
+            <circle cx="200" cy="200" r="88" class="hero-coin-edge" />
+            <circle cx="200" cy="200" r="70" class="hero-coin-ring" />
+            <text x="200" y="222" class="hero-coin-glyph">€</text>
+
+            <circle cx="108" cy="292" r="38" fill="url(#hero-coin-small)" class="hero-coin" />
+            <circle cx="108" cy="292" r="38" class="hero-coin-edge" />
+            <line x1="90" y1="278" x2="126" y2="306" class="hero-coin-shine" />
+
+            <g class="hero-cheque" transform="translate(224 246) rotate(9)">
+              <rect x="0" y="0" width="168" height="94" rx="8" />
+              <circle cx="14" cy="16" r="3.5" class="hero-cheque-perf" />
+              <circle cx="14" cy="34" r="3.5" class="hero-cheque-perf" />
+              <circle cx="14" cy="52" r="3.5" class="hero-cheque-perf" />
+              <circle cx="14" cy="70" r="3.5" class="hero-cheque-perf" />
+              <line x1="28" y1="24" x2="110" y2="24" class="hero-cheque-line" />
+              <line x1="28" y1="42" x2="150" y2="42" class="hero-cheque-line" />
+              <rect x="120" y="14" width="38" height="18" rx="3" class="hero-cheque-box" />
+              <path d="M28 68 Q 46 54 64 68 T 100 68 T 130 60" class="hero-cheque-signature" />
+            </g>
+          </svg>
         </div>
       </div>
-
-      <p class="login-version">v{{ APP_VERSION }}<span v-if="dbDriverLabel"> · {{ dbDriverLabel }}</span></p>
 
       <template v-if="mode === 'login'">
         <div class="login-heading">
@@ -512,13 +516,108 @@ async function handleResetPassword() {
   pointer-events: none;
 }
 
-.matrix-rain {
+.login-parent-logo {
   position: absolute;
-  inset: 0;
+  top: 1.4rem;
+  left: 1.9rem;
+  width: 36px;
+  height: auto;
+  opacity: 0.85;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
+}
+
+.login-hero-svg {
+  position: relative;
+  display: block;
   width: 100%;
-  height: 100%;
-  opacity: 0.5;
-  pointer-events: none;
+  height: auto;
+  -webkit-mask-image: radial-gradient(ellipse 62% 62% at center, black 45%, transparent 78%);
+  mask-image: radial-gradient(ellipse 62% 62% at center, black 45%, transparent 78%);
+}
+
+.hero-splash {
+  opacity: 0.55;
+}
+
+.hero-bill-border {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 1.5;
+  stroke-dasharray: 2.5 3;
+}
+
+.hero-bill-portrait {
+  fill: rgba(255, 255, 255, 0.16);
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 1.2;
+}
+
+.hero-bill-value {
+  font-family: 'Georgia', serif;
+  font-size: 26px;
+  font-weight: 700;
+  fill: rgba(255, 255, 255, 0.3);
+}
+
+.hero-coin {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 2;
+}
+
+.hero-coin-edge {
+  fill: none;
+  stroke: rgba(60, 45, 10, 0.35);
+  stroke-width: 3;
+  stroke-dasharray: 2 4;
+}
+
+.hero-coin-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+}
+
+.hero-coin-glyph {
+  font-family: 'Georgia', serif;
+  font-size: 56px;
+  font-weight: 700;
+  fill: rgba(60, 45, 10, 0.55);
+  text-anchor: middle;
+}
+
+.hero-coin-shine {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.hero-cheque rect:first-child {
+  fill: #ece6d6;
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 2;
+}
+
+.hero-cheque-perf {
+  fill: rgba(11, 15, 24, 0.35);
+}
+
+.hero-cheque-line {
+  stroke: rgba(46, 41, 30, 0.3);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.hero-cheque-box {
+  fill: none;
+  stroke: rgba(46, 41, 30, 0.32);
+  stroke-width: 1.4;
+}
+
+.hero-cheque-signature {
+  fill: none;
+  stroke: rgba(46, 41, 30, 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .login-card {
@@ -557,17 +656,10 @@ async function handleResetPassword() {
   content: '';
   position: absolute;
   inset: -12%;
-  background: radial-gradient(circle, var(--accent, #728998) 0%, var(--accent-soft, #819b8d) 45%, transparent 72%);
-  opacity: 0.32;
+  background: radial-gradient(circle, #d4af37 0%, #3ea67a 45%, transparent 72%);
+  opacity: 0.28;
   filter: blur(18px);
   pointer-events: none;
-}
-
-.login-logo-image {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: auto;
 }
 
 .login-heading {
