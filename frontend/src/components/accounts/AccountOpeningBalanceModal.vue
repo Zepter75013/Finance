@@ -20,7 +20,7 @@
 
       <form class="opening-balance-form" @submit.prevent="handleConfirm">
         <label class="form-field">
-          <span>Montant (€)</span>
+          <span>Montant ({{ currency }})</span>
           <input
             ref="amountInputRef"
             v-model="amount"
@@ -63,6 +63,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { currencySymbol } from '../../utils/format'
 
 const props = defineProps({
   modelValue: {
@@ -86,6 +87,7 @@ const isSubmitting = ref(false)
 const errorMessage = ref('')
 
 const hasExistingOpeningBalance = computed(() => props.account?.openingBalanceAmount != null)
+const currency = computed(() => currencySymbol())
 
 watch(
   () => props.modelValue,

@@ -49,7 +49,7 @@
         </label>
 
         <label class="form-field">
-          <span>Montant</span>
+          <span>Montant ({{ currency }})</span>
           <input
             v-model.number="form.amount"
             type="number"
@@ -217,6 +217,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePurchasesStore } from '../../stores/purchases'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
+import { currencySymbol } from '../../utils/format'
 
 const props = defineProps({
   modelValue: {
@@ -247,6 +248,7 @@ const isCreatingSubCategoryInline = ref(false)
 const subCategoryModalError = ref('')
 
 const isEditMode = computed(() => Boolean(props.purchase?.id))
+const currency = computed(() => currencySymbol())
 
 const isTransfer = ref(false)
 const transferAccountId = ref(null)

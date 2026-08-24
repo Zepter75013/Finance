@@ -16,7 +16,13 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select', 'edit', 'delete', 'toggle-check'])
+const emit = defineEmits(['select', 'edit', 'delete', 'toggle-check', 'undo'])
+
+// Un virement créé directement (pas via la conversion d'un revenu) n'a pas de
+// ligne d'origine à restaurer.
+function canUndoTransfer(income) {
+  return Boolean(income.raw?.originType) && Boolean(income.raw?.originPayload)
+}
 
 
 
@@ -47,14 +53,16 @@ function getSourceIcon(source) {
           type="checkbox"
           class="row-checkbox"
           :checked="checked"
+          :disabled="income.isTransfer"
+          :title="income.isTransfer ? 'Les virements se gèrent depuis leur propre bouton Supprimer' : ''"
           aria-label="Sélectionner ce revenu"
           @click.stop
           @dblclick.stop
           @change="emit('toggle-check', props.income)"
         />
 
-        <span class="row-icon" :title="income.source" aria-hidden="true">
-          {{ getSourceIcon(income.source) }}
+        <span class="row-icon" :title="income.isTransfer ? 'Virement' : income.source" aria-hidden="true">
+          {{ income.isTransfer ? '🔀' : getSourceIcon(income.source) }}
         </span>
 
         <div class="income-amount-inline">
@@ -70,7 +78,11 @@ function getSourceIcon(source) {
             <span class="income-date-inline">
               {{ formatIncomeDate(income.income_date) }}
             </span>
+            <span v-if="income.isTransfer" class="transfer-badge-inline">
+              Virement
+            </span>
             <span
+              v-else
               class="reconciled-badge-inline"
               :class="income.isReconciled ? 'is-reconciled' : 'is-pending'"
               :title="income.isReconciled && income.statementReference ? `Relevé ${income.statementReference}` : ''"
@@ -83,13 +95,26 @@ function getSourceIcon(source) {
 
       <div class="income-row-actions" @click.stop @dblclick.stop>
         <button
+          v-if="income.isTransfer && canUndoTransfer(income)"
           class="icon-btn"
           type="button"
-          aria-label="Modifier ce revenu"
-          title="Modifier"
+          aria-label="Annuler ce transfert et revenir au revenu d'origine"
+          title="Annuler ce transfert et revenir au revenu d'origine"
+          @click="emit('undo', props.income)"
+        >
+          ↩️
+        </button>
+
+        <button
+          v-else
+          class="icon-btn"
+          type="button"
+          :aria-label="income.isTransfer ? 'Modifier ce virement' : 'Modifier ce revenu'"
+          :title="income.isTransfer ? 'Virement — modifier' : 'Modifier'"
           @click="emit('edit', props.income)"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <span v-if="income.isTransfer" aria-hidden="true">🔀</span>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M4 20h4l10.5-10.5a1.414 1.414 0 0 0-4-4L4 16v4z"
               fill="none"
@@ -275,6 +300,17 @@ function getSourceIcon(source) {
 
 .reconciled-badge-inline.is-pending {
   color: var(--text-dim, #8a939d);
+}
+
+.transfer-badge-inline {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #f0a95e;
+  background: rgba(240, 169, 94, 0.16);
 }
 
 .income-row-actions {

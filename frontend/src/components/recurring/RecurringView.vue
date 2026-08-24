@@ -12,7 +12,7 @@ import {
   deleteRecurring,
   executeRecurringNow,
 } from '../../services/recurring'
-import { formatCurrency, formatDate } from '../../utils/format'
+import { formatCurrency, formatDate, currencySymbol } from '../../utils/format'
 import { daysUntil } from '../../utils/dates'
 
 const store = usePurchasesStore()
@@ -20,6 +20,8 @@ const { accountsList, categoriesList } = storeToRefs(store)
 
 const recurringStore = useRecurringStore()
 const { items, isLoading, loadError, upcomingItems } = storeToRefs(recurringStore)
+
+const currency = computed(() => currencySymbol())
 
 const activeAccountId = computed({
   get: () => store.activeAccountId,
@@ -366,7 +368,7 @@ onMounted(loadRecurring)
           </template>
 
           <label class="form-field">
-            <span>Montant</span>
+            <span>Montant ({{ currency }})</span>
             <input v-model.number="form.amount" type="number" min="0.01" step="0.01" placeholder="0.00" />
           </label>
 

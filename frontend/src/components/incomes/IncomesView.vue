@@ -7,9 +7,11 @@ import ConfirmModal from '../Common/ConfirmModal.vue'
 import ColumnVisibilityMenu from '../Common/ColumnVisibilityMenu.vue'
 import IncomeCharts from './IncomeCharts.vue'
 import IncomeRowCard from './IncomeRowCard.vue'
+import TransferQuickAddModal from '../dashboard/TransferQuickAddModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useTableColumns } from '../../composables/useTableColumns'
 import { formatCurrency } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 const props = defineProps({
   isLoading: {
@@ -21,7 +23,45 @@ const props = defineProps({
 const emit = defineEmits(['create', 'edit', 'delete', 'bulk-delete'])
 
 const store = usePurchasesStore()
-const { incomes } = storeToRefs(store)
+const { incomes, transfers } = storeToRefs(store)
+
+function parseOriginPayload(t) {
+  if (!t.originPayload) return null
+
+  try {
+    return JSON.parse(t.originPayload)
+  } catch {
+    return null
+  }
+}
+
+// Un virement entrant (argent qui arrive sur ce compte) est affiché ici comme
+// un revenu « pseudo » — sinon il disparaît purement et simplement de la vue
+// dès qu'un revenu est converti en virement, ce qui déroute l'utilisateur.
+const incomingTransferItems = computed(() =>
+  transfers.value
+    .map((t) => {
+      const leg = signTransferLeg(t, store.activeAccountId)
+      if (leg.isOutgoing) return null
+
+      const origin = parseOriginPayload(t)
+
+      return {
+        id: `transfer-${t.id}`,
+        income_date: leg.date,
+        source: `Virement depuis ${t.fromAccountName}`,
+        category: origin?.category || 'Virement',
+        subCategory: '',
+        reference: origin?.reference || '',
+        statementReference: leg.statement_reference,
+        isReconciled: t.toIsReconciled,
+        amount: Math.abs(leg.amount),
+        isTransfer: true,
+        raw: t,
+      }
+    })
+    .filter(Boolean)
+)
 
 // Contexte de la vue (tri, filtres, pagination) conservé au fil des
 // navigations — sans ça, quitter l'écran puis y revenir remettait tout à
@@ -241,8 +281,14 @@ function isWithinRange(dateValue, range) {
   return date >= startDate && date <= now
 }
 
+// Fusionné avec les revenus réels uniquement pour l'affichage — les totaux
+// (filteredTotalAmount, etc.) restent calculés sur les revenus seuls plus
+// bas, pour ne pas fausser les statistiques avec des mouvements internes
+// entre comptes.
+const mergedIncomes = computed(() => [...incomes.value, ...incomingTransferItems.value])
+
 const activityIncomes = computed(() => {
-  return incomes.value.filter((income) => {
+  return mergedIncomes.value.filter((income) => {
     if (!isWithinRange(income.income_date, activityRange.value)) return false
 
     if (activitySource.value !== 'all') {
@@ -279,10 +325,13 @@ const hasActivityFilters = computed(
 // Les cartes de résumé reflètent les revenus filtrés (et non plus toujours
 // l'ensemble des données) — sinon elles ne correspondaient plus à ce qui
 // est réellement affiché dans la liste dès qu'un filtre était actif.
-const filteredTotalAmount = computed(() =>
-  activityIncomes.value.reduce((sum, income) => sum + Number(income.amount || 0), 0)
+const nonTransferActivityIncomes = computed(() =>
+  activityIncomes.value.filter((income) => !income.isTransfer)
 )
-const filteredIncomeCount = computed(() => activityIncomes.value.length)
+const filteredTotalAmount = computed(() =>
+  nonTransferActivityIncomes.value.reduce((sum, income) => sum + Number(income.amount || 0), 0)
+)
+const filteredIncomeCount = computed(() => nonTransferActivityIncomes.value.length)
 const filteredAverageAmount = computed(() =>
   filteredIncomeCount.value > 0 ? filteredTotalAmount.value / filteredIncomeCount.value : 0
 )
@@ -473,7 +522,9 @@ const groupedIncomes = computed(() => {
     })
 })
 
-const hasIncomeData = computed(() => incomes.value.length > 0)
+const hasIncomeData = computed(
+  () => incomes.value.length > 0 || incomingTransferItems.value.length > 0
+)
 
 const hasVisibleActivity = computed(() =>
   isGrouped.value ? groupedIncomes.value.length > 0 : sortedActivityIncomes.value.length > 0
@@ -497,13 +548,13 @@ const hasSelection = computed(() => checkedIncomeIds.size > 0)
 
 const isAllSelected = computed(() => {
   return (
-    activityIncomes.value.length > 0 &&
-    activityIncomes.value.every((income) => checkedIncomeIds.has(income.id))
+    nonTransferActivityIncomes.value.length > 0 &&
+    nonTransferActivityIncomes.value.every((income) => checkedIncomeIds.has(income.id))
   )
 })
 
 function selectAll() {
-  for (const income of activityIncomes.value) checkedIncomeIds.add(income.id)
+  for (const income of nonTransferActivityIncomes.value) checkedIncomeIds.add(income.id)
 }
 
 function clearSelection() {
@@ -571,11 +622,87 @@ function handleCreate() {
   emit('create')
 }
 
+const isTransferEditOpen = ref(false)
+const editingTransferRow = ref(null)
+
+function openEditTransfer(income) {
+  editingTransferRow.value = income.raw
+  isTransferEditOpen.value = true
+}
+
+const transferDeleteTarget = ref(null)
+const isDeletingTransfer = ref(false)
+const transferDeleteError = ref('')
+
+function requestDeleteTransfer(income) {
+  transferDeleteError.value = ''
+  transferDeleteTarget.value = income
+}
+
+async function confirmDeleteTransfer() {
+  if (!transferDeleteTarget.value) return
+
+  isDeletingTransfer.value = true
+  transferDeleteError.value = ''
+
+  try {
+    await store.removeTransfer(transferDeleteTarget.value.raw.id)
+    transferDeleteTarget.value = null
+  } catch (err) {
+    transferDeleteError.value =
+      err instanceof Error ? err.message : 'Impossible de supprimer ce virement.'
+  } finally {
+    isDeletingTransfer.value = false
+  }
+}
+
+// Un virement créé directement (pas via la conversion d'un revenu) n'a pas de
+// ligne d'origine à restaurer.
+function canUndoTransfer(income) {
+  return Boolean(income.raw?.originType) && Boolean(income.raw?.originPayload)
+}
+
+const undoTransferTarget = ref(null)
+const isUndoingTransfer = ref(false)
+const undoTransferError = ref('')
+
+function requestUndoTransfer(income) {
+  undoTransferError.value = ''
+  undoTransferTarget.value = income
+}
+
+async function confirmUndoTransfer() {
+  if (!undoTransferTarget.value) return
+
+  isUndoingTransfer.value = true
+  undoTransferError.value = ''
+
+  try {
+    await store.undoTransfer(undoTransferTarget.value.raw)
+    undoTransferTarget.value = null
+  } catch (err) {
+    undoTransferError.value =
+      err instanceof Error ? err.message : 'Impossible d’annuler ce transfert.'
+  } finally {
+    isUndoingTransfer.value = false
+  }
+}
+
 function handleEdit(income) {
+  if (income.isTransfer) {
+    openEditTransfer(income)
+    return
+  }
+
   emit('edit', income)
 }
 
 function handleDelete(income) {
+  if (income.isTransfer) {
+    requestDeleteTransfer(income)
+    return
+  }
+
   emit('delete', income)
 }
 </script>
@@ -861,6 +988,7 @@ function handleDelete(income) {
                     @edit="handleEdit"
                     @delete="handleDelete"
                     @toggle-check="toggleChecked"
+                    @undo="requestUndoTransfer"
                   />
                 </div>
 
@@ -994,6 +1122,7 @@ function handleDelete(income) {
                       <input
                         type="checkbox"
                         :checked="isChecked(income.id)"
+                        :disabled="income.isTransfer"
                         @click.stop
                         @change="toggleChecked(income)"
                       />
@@ -1036,7 +1165,24 @@ function handleDelete(income) {
                     </td>
                     <td class="actions-col">
                       <div class="actions-col-inner">
-                        <button class="icon-btn" type="button" title="Modifier" @click="handleEdit(income)">✏️</button>
+                        <button
+                          v-if="income.isTransfer && canUndoTransfer(income)"
+                          class="icon-btn"
+                          type="button"
+                          title="Annuler ce transfert et revenir au revenu d'origine"
+                          @click="requestUndoTransfer(income)"
+                        >
+                          ↩️
+                        </button>
+                        <button
+                          v-else
+                          class="icon-btn"
+                          type="button"
+                          :title="income.isTransfer ? 'Virement — modifier' : 'Modifier'"
+                          @click="handleEdit(income)"
+                        >
+                          {{ income.isTransfer ? '🔀' : '✏️' }}
+                        </button>
                         <button class="icon-btn icon-btn-danger" type="button" title="Supprimer" @click="handleDelete(income)">🗑️</button>
                       </div>
                     </td>
@@ -1080,6 +1226,7 @@ function handleDelete(income) {
                 @edit="handleEdit"
                 @delete="handleDelete"
                 @toggle-check="toggleChecked"
+                @undo="requestUndoTransfer"
               />
             </div>
 
@@ -1117,6 +1264,31 @@ function handleDelete(income) {
       confirm-label="Supprimer la sélection"
       :is-processing="isBulkDeleting"
       @confirm="deleteSelected"
+    />
+
+    <TransferQuickAddModal v-model="isTransferEditOpen" :transfer="editingTransferRow" />
+
+    <ConfirmModal
+      :model-value="Boolean(transferDeleteTarget)"
+      title="Supprimer ce virement ?"
+      :message="`${transferDeleteTarget?.source} — ${formatCurrency(transferDeleteTarget?.amount ?? 0)} ne sera plus suivi dans l'application.`"
+      :note="transferDeleteError || 'Cette action est irréversible.'"
+      confirm-label="Supprimer"
+      :is-processing="isDeletingTransfer"
+      @update:model-value="transferDeleteTarget = null"
+      @confirm="confirmDeleteTransfer"
+    />
+
+    <ConfirmModal
+      :model-value="Boolean(undoTransferTarget)"
+      title="Annuler ce transfert ?"
+      message="Le transfert sera supprimé et remplacé par le revenu d'origine, tel qu'il était avant la conversion."
+      :note="undoTransferError || 'Cette action est irréversible.'"
+      confirm-label="Annuler le transfert"
+      confirming-label="Annulation..."
+      :is-processing="isUndoingTransfer"
+      @update:model-value="undoTransferTarget = null"
+      @confirm="confirmUndoTransfer"
     />
   </main>
 </template>

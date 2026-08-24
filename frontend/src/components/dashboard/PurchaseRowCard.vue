@@ -16,7 +16,13 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select', 'edit', 'delete', 'toggle-check'])
+const emit = defineEmits(['select', 'edit', 'delete', 'toggle-check', 'undo'])
+
+// Un virement créé directement (pas via la conversion d'un achat) n'a pas de
+// ligne d'origine à restaurer.
+function canUndoTransfer(purchase) {
+  return Boolean(purchase.raw?.originType) && Boolean(purchase.raw?.originPayload)
+}
 
 function formatMerchantLabel(value) {
   return value?.trim() || 'Sans commerçant'
@@ -52,14 +58,16 @@ function getCategoryIcon(category) {
           type="checkbox"
           class="row-checkbox"
           :checked="checked"
+          :disabled="purchase.isTransfer"
+          :title="purchase.isTransfer ? 'Les virements se gèrent depuis leur propre bouton Supprimer' : ''"
           aria-label="Sélectionner cet achat"
           @click.stop
           @dblclick.stop
           @change="emit('toggle-check', props.purchase)"
         />
 
-        <span class="row-icon" :title="purchase.category" aria-hidden="true">
-          {{ getCategoryIcon(purchase.category) }}
+        <span class="row-icon" :title="purchase.isTransfer ? 'Virement' : purchase.category" aria-hidden="true">
+          {{ purchase.isTransfer ? '🔀' : getCategoryIcon(purchase.category) }}
         </span>
 
         <div class="purchase-amount-inline">
@@ -75,7 +83,11 @@ function getCategoryIcon(category) {
             <span class="purchase-date-inline">
               {{ formatPurchaseDate(purchase.date) }}
             </span>
+            <span v-if="purchase.isTransfer" class="transfer-badge-inline">
+              Virement
+            </span>
             <span
+              v-else
               class="reconciled-badge-inline"
               :class="purchase.isReconciled ? 'is-reconciled' : 'is-pending'"
               :title="purchase.isReconciled && purchase.statementReference ? `Relevé ${purchase.statementReference}` : ''"
@@ -88,13 +100,26 @@ function getCategoryIcon(category) {
 
       <div class="purchase-row-actions" @click.stop @dblclick.stop>
         <button
+          v-if="purchase.isTransfer && canUndoTransfer(purchase)"
           class="icon-btn"
           type="button"
-          aria-label="Modifier cet achat"
-          title="Modifier"
+          aria-label="Annuler ce transfert et revenir à l'achat d'origine"
+          title="Annuler ce transfert et revenir à l'achat d'origine"
+          @click="emit('undo', props.purchase)"
+        >
+          ↩️
+        </button>
+
+        <button
+          v-else
+          class="icon-btn"
+          type="button"
+          :aria-label="purchase.isTransfer ? 'Modifier ce virement' : 'Modifier cet achat'"
+          :title="purchase.isTransfer ? 'Virement — modifier' : 'Modifier'"
           @click="emit('edit', props.purchase)"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <span v-if="purchase.isTransfer" aria-hidden="true">🔀</span>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M4 20h4l10.5-10.5a1.414 1.414 0 0 0-4-4L4 16v4z"
               fill="none"
@@ -280,6 +305,17 @@ function getCategoryIcon(category) {
 
 .reconciled-badge-inline.is-pending {
   color: var(--text-dim, #8a939d);
+}
+
+.transfer-badge-inline {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #f0a95e;
+  background: rgba(240, 169, 94, 0.16);
 }
 
 .purchase-row-actions {

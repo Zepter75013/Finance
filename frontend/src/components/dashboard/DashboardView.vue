@@ -188,21 +188,38 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
 // répartir).
 const isSimplifiedDashboard = computed(() => activeAccount.value?.hasStatements === false)
 
-const allTimeTransferLegs = computed(() =>
-  transfers.value.map((t) => signTransferLeg(t, store.activeAccountId))
-)
+// Même règle que computeRealBalance (realBalance.js) pour rester cohérent
+// avec la carte "Solde réel" : un solde initial déclaré n'ancre le calcul
+// que sur les mouvements enregistrés DEPUIS sa date — les virements
+// antérieurs sont déjà représentés dedans, les compter en plus doublerait.
+const allTimeTransferLegs = computed(() => {
+  const sinceDate = activeAccount.value?.openingBalanceDate || null
 
-const allTimeDebitTotal = computed(() =>
-  allTimeTransferLegs.value
+  return transfers.value
+    .map((t) => signTransferLeg(t, store.activeAccountId))
+    .filter((leg) => !sinceDate || leg.date >= sinceDate)
+})
+
+// Le solde initial déclaré compte comme un crédit (ou un débit s'il est
+// négatif) au même titre qu'un virement — sinon "Solde net" ne
+// correspondrait pas au "Solde réel" affiché juste à côté.
+const openingBalanceAmount = computed(() => Number(activeAccount.value?.openingBalanceAmount || 0))
+
+const allTimeDebitTotal = computed(() => {
+  const transfersTotal = allTimeTransferLegs.value
     .filter((leg) => leg.isOutgoing)
     .reduce((sum, leg) => sum + Math.abs(leg.amount), 0)
-)
 
-const allTimeCreditTotal = computed(() =>
-  allTimeTransferLegs.value
+  return transfersTotal + (openingBalanceAmount.value < 0 ? Math.abs(openingBalanceAmount.value) : 0)
+})
+
+const allTimeCreditTotal = computed(() => {
+  const transfersTotal = allTimeTransferLegs.value
     .filter((leg) => !leg.isOutgoing)
     .reduce((sum, leg) => sum + leg.amount, 0)
-)
+
+  return transfersTotal + (openingBalanceAmount.value > 0 ? openingBalanceAmount.value : 0)
+})
 
 const allTimeNetBalance = computed(() => allTimeCreditTotal.value - allTimeDebitTotal.value)
 
@@ -271,13 +288,13 @@ const allTimeNetBalance = computed(() => allTimeCreditTotal.value - allTimeDebit
       <article class="panel stat-card">
         <span>Débit</span>
         <strong>{{ formatCurrency(allTimeDebitTotal) }}</strong>
-        <p>Total des virements sortants</p>
+        <p>{{ openingBalanceAmount < 0 ? 'Virements sortants + solde initial' : 'Total des virements sortants' }}</p>
       </article>
 
       <article class="panel stat-card accent-soft">
         <span>Crédit</span>
         <strong>{{ formatCurrency(allTimeCreditTotal) }}</strong>
-        <p>Total des virements reçus</p>
+        <p>{{ openingBalanceAmount > 0 ? 'Virements reçus + solde initial' : 'Total des virements reçus' }}</p>
       </article>
 
       <article class="panel stat-card">

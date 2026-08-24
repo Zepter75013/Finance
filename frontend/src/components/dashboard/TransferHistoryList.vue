@@ -41,25 +41,34 @@ const rows = computed(() =>
   [...transfers.value].map(mapTransferRow).sort((a, b) => (a.date < b.date ? 1 : -1))
 )
 
-const isUndoingId = ref(null)
-const undoError = ref('')
-
 // Un virement créé directement (pas via la case « virement » de Pointage,
 // ex: import CSV) n'a pas de ligne d'origine à restaurer.
 function canUndoTransfer(row) {
   return Boolean(row.raw.originType) && Boolean(row.raw.originPayload)
 }
 
-async function undoTransfer(row) {
+const undoTarget = ref(null)
+const isUndoing = ref(false)
+const undoError = ref('')
+
+function requestUndo(row) {
   undoError.value = ''
-  isUndoingId.value = row.id
+  undoTarget.value = row
+}
+
+async function confirmUndo() {
+  if (!undoTarget.value) return
+
+  isUndoing.value = true
+  undoError.value = ''
 
   try {
-    await store.undoTransfer(row.raw)
+    await store.undoTransfer(undoTarget.value.raw)
+    undoTarget.value = null
   } catch (err) {
-    undoError.value = err instanceof Error ? err.message : 'Impossible d’annuler ce virement.'
+    undoError.value = err instanceof Error ? err.message : 'Impossible d’annuler ce transfert.'
   } finally {
-    isUndoingId.value = null
+    isUndoing.value = false
   }
 }
 
@@ -102,8 +111,6 @@ async function confirmDelete() {
       </button>
     </div>
 
-    <p v-if="undoError" class="form-error">{{ undoError }}</p>
-
     <div v-if="!rows.length" class="empty-state-inline">
       Aucun virement pour l'instant sur ce compte.
     </div>
@@ -141,12 +148,11 @@ async function confirmDelete() {
                 v-if="canUndoTransfer(row)"
                 class="icon-btn"
                 type="button"
-                title="Annuler ce virement et revenir à l'achat/revenu d'origine"
-                aria-label="Annuler ce virement"
-                :disabled="isUndoingId === row.id"
-                @click="undoTransfer(row)"
+                title="Annuler ce transfert et revenir à l'achat/revenu d'origine"
+                aria-label="Annuler ce transfert"
+                @click="requestUndo(row)"
               >
-                {{ isUndoingId === row.id ? '…' : '↩️' }}
+                ↩️
               </button>
               <button
                 class="icon-btn icon-btn-danger"
@@ -172,6 +178,18 @@ async function confirmDelete() {
       :is-processing="isDeleting"
       @update:model-value="deleteTarget = null"
       @confirm="confirmDelete"
+    />
+
+    <ConfirmModal
+      :model-value="Boolean(undoTarget)"
+      title="Annuler ce transfert ?"
+      message="Le transfert sera supprimé et remplacé par l'achat ou le revenu d'origine, tel qu'il était avant la conversion."
+      :note="undoError || 'Cette action est irréversible.'"
+      confirm-label="Annuler le transfert"
+      confirming-label="Annulation..."
+      :is-processing="isUndoing"
+      @update:model-value="undoTarget = null"
+      @confirm="confirmUndo"
     />
 
     <TransferQuickAddModal v-model="isQuickAddOpen" :transfer="editingTransfer" />

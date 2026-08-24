@@ -7,9 +7,11 @@ import ConfirmModal from '../Common/ConfirmModal.vue'
 import ColumnVisibilityMenu from '../Common/ColumnVisibilityMenu.vue'
 import PurchaseCharts from './PurchaseCharts.vue'
 import PurchaseRowCard from './PurchaseRowCard.vue'
+import TransferQuickAddModal from './TransferQuickAddModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useTableColumns } from '../../composables/useTableColumns'
 import { formatCurrency } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 const props = defineProps({
   isLoading: {
@@ -21,7 +23,46 @@ const props = defineProps({
 const emit = defineEmits(['create', 'edit', 'delete', 'bulk-delete'])
 
 const store = usePurchasesStore()
-const { purchases, filteredPurchases, categoriesList, subCategoriesList } = storeToRefs(store)
+const { purchases, filteredPurchases, categoriesList, subCategoriesList, transfers } = storeToRefs(store)
+
+function parseOriginPayload(t) {
+  if (!t.originPayload) return null
+
+  try {
+    return JSON.parse(t.originPayload)
+  } catch {
+    return null
+  }
+}
+
+// Un virement sortant (argent qui quitte ce compte) est affiché ici comme un
+// achat « pseudo » — sinon il disparaît purement et simplement de la vue dès
+// qu'un achat est converti en virement, ce qui déroute l'utilisateur.
+const outgoingTransferItems = computed(() =>
+  transfers.value
+    .map((t) => {
+      const leg = signTransferLeg(t, store.activeAccountId)
+      if (!leg.isOutgoing) return null
+
+      const origin = parseOriginPayload(t)
+
+      return {
+        id: `transfer-${t.id}`,
+        date: leg.date,
+        merchant: `Virement vers ${t.toAccountName}`,
+        category: origin?.category || 'Virement',
+        subCategory: '',
+        paymentMethod: '',
+        reference: origin?.reference || '',
+        statementReference: leg.statement_reference,
+        isReconciled: t.fromIsReconciled,
+        amount: Math.abs(leg.amount),
+        isTransfer: true,
+        raw: t,
+      }
+    })
+    .filter(Boolean)
+)
 
 // Contexte de la vue (tri, filtres, pagination) conservé au fil des
 // navigations — sans ça, quitter l'écran puis y revenir remettait tout à
@@ -220,8 +261,14 @@ function isWithinRange(dateValue, range) {
   return date >= startDate && date <= now
 }
 
+// Fusionné avec les achats réels uniquement pour l'affichage — les totaux
+// (filteredTotalAmount, etc.) restent calculés sur les achats seuls plus bas,
+// pour ne pas fausser les statistiques de dépenses avec des mouvements
+// internes entre comptes.
+const mergedPurchases = computed(() => [...filteredPurchases.value, ...outgoingTransferItems.value])
+
 const activityPurchases = computed(() => {
-  return filteredPurchases.value.filter((purchase) => {
+  return mergedPurchases.value.filter((purchase) => {
     if (!isWithinRange(purchase.date, activityRange.value)) return false
 
     if (activityCategory.value !== 'all') {
@@ -252,10 +299,13 @@ const hasActivityFilters = computed(
 // Les cartes de résumé reflètent les achats filtrés (et non plus toujours
 // l'ensemble des données) — sinon elles ne correspondaient plus à ce qui
 // est réellement affiché dans la liste dès qu'un filtre était actif.
-const filteredTotalAmount = computed(() =>
-  activityPurchases.value.reduce((sum, purchase) => sum + Number(purchase.amount || 0), 0)
+const nonTransferActivityPurchases = computed(() =>
+  activityPurchases.value.filter((purchase) => !purchase.isTransfer)
 )
-const filteredPurchaseCount = computed(() => activityPurchases.value.length)
+const filteredTotalAmount = computed(() =>
+  nonTransferActivityPurchases.value.reduce((sum, purchase) => sum + Number(purchase.amount || 0), 0)
+)
+const filteredPurchaseCount = computed(() => nonTransferActivityPurchases.value.length)
 const filteredAverageAmount = computed(() =>
   filteredPurchaseCount.value > 0 ? filteredTotalAmount.value / filteredPurchaseCount.value : 0
 )
@@ -452,7 +502,9 @@ const groupedPurchases = computed(() => {
 // Basé sur l'ensemble des achats (pas la liste déjà filtrée par catégorie
 // active) — comme pour les revenus, sinon un filtre de catégorie resté actif
 // (ex: venu de Catégories) masquait ce bloc même quand il y a bien des achats.
-const hasPurchaseData = computed(() => purchases.value.length > 0)
+const hasPurchaseData = computed(
+  () => purchases.value.length > 0 || outgoingTransferItems.value.length > 0
+)
 
 const hasVisibleActivity = computed(() =>
   isGrouped.value ? groupedPurchases.value.length > 0 : sortedActivityPurchases.value.length > 0
@@ -476,13 +528,13 @@ const hasSelection = computed(() => checkedPurchaseIds.size > 0)
 
 const isAllSelected = computed(() => {
   return (
-    activityPurchases.value.length > 0 &&
-    activityPurchases.value.every((purchase) => checkedPurchaseIds.has(purchase.id))
+    nonTransferActivityPurchases.value.length > 0 &&
+    nonTransferActivityPurchases.value.every((purchase) => checkedPurchaseIds.has(purchase.id))
   )
 })
 
 function selectAll() {
-  for (const purchase of activityPurchases.value) checkedPurchaseIds.add(purchase.id)
+  for (const purchase of nonTransferActivityPurchases.value) checkedPurchaseIds.add(purchase.id)
 }
 
 function clearSelection() {
@@ -550,11 +602,87 @@ function handleCreate() {
   emit('create')
 }
 
+const isTransferEditOpen = ref(false)
+const editingTransferRow = ref(null)
+
+function openEditTransfer(purchase) {
+  editingTransferRow.value = purchase.raw
+  isTransferEditOpen.value = true
+}
+
+const transferDeleteTarget = ref(null)
+const isDeletingTransfer = ref(false)
+const transferDeleteError = ref('')
+
+function requestDeleteTransfer(purchase) {
+  transferDeleteError.value = ''
+  transferDeleteTarget.value = purchase
+}
+
+async function confirmDeleteTransfer() {
+  if (!transferDeleteTarget.value) return
+
+  isDeletingTransfer.value = true
+  transferDeleteError.value = ''
+
+  try {
+    await store.removeTransfer(transferDeleteTarget.value.raw.id)
+    transferDeleteTarget.value = null
+  } catch (err) {
+    transferDeleteError.value =
+      err instanceof Error ? err.message : 'Impossible de supprimer ce virement.'
+  } finally {
+    isDeletingTransfer.value = false
+  }
+}
+
+// Un virement créé directement (pas via la conversion d'un achat) n'a pas de
+// ligne d'origine à restaurer.
+function canUndoTransfer(purchase) {
+  return Boolean(purchase.raw?.originType) && Boolean(purchase.raw?.originPayload)
+}
+
+const undoTransferTarget = ref(null)
+const isUndoingTransfer = ref(false)
+const undoTransferError = ref('')
+
+function requestUndoTransfer(purchase) {
+  undoTransferError.value = ''
+  undoTransferTarget.value = purchase
+}
+
+async function confirmUndoTransfer() {
+  if (!undoTransferTarget.value) return
+
+  isUndoingTransfer.value = true
+  undoTransferError.value = ''
+
+  try {
+    await store.undoTransfer(undoTransferTarget.value.raw)
+    undoTransferTarget.value = null
+  } catch (err) {
+    undoTransferError.value =
+      err instanceof Error ? err.message : 'Impossible d’annuler ce transfert.'
+  } finally {
+    isUndoingTransfer.value = false
+  }
+}
+
 function handleEdit(purchase) {
+  if (purchase.isTransfer) {
+    openEditTransfer(purchase)
+    return
+  }
+
   emit('edit', purchase)
 }
 
 function handleDelete(purchase) {
+  if (purchase.isTransfer) {
+    requestDeleteTransfer(purchase)
+    return
+  }
+
   emit('delete', purchase)
 }
 </script>
@@ -832,6 +960,7 @@ function handleDelete(purchase) {
                     @edit="handleEdit"
                     @delete="handleDelete"
                     @toggle-check="toggleChecked"
+                    @undo="requestUndoTransfer"
                   />
                 </div>
 
@@ -975,6 +1104,7 @@ function handleDelete(purchase) {
                       <input
                         type="checkbox"
                         :checked="isChecked(purchase.id)"
+                        :disabled="purchase.isTransfer"
                         @click.stop
                         @change="toggleChecked(purchase)"
                       />
@@ -1020,7 +1150,24 @@ function handleDelete(purchase) {
                     </td>
                     <td class="actions-col">
                       <div class="actions-col-inner">
-                        <button class="icon-btn" type="button" title="Modifier" @click="handleEdit(purchase)">✏️</button>
+                        <button
+                          v-if="purchase.isTransfer && canUndoTransfer(purchase)"
+                          class="icon-btn"
+                          type="button"
+                          title="Annuler ce transfert et revenir à l'achat d'origine"
+                          @click="requestUndoTransfer(purchase)"
+                        >
+                          ↩️
+                        </button>
+                        <button
+                          v-else
+                          class="icon-btn"
+                          type="button"
+                          :title="purchase.isTransfer ? 'Virement — modifier' : 'Modifier'"
+                          @click="handleEdit(purchase)"
+                        >
+                          {{ purchase.isTransfer ? '🔀' : '✏️' }}
+                        </button>
                         <button class="icon-btn icon-btn-danger" type="button" title="Supprimer" @click="handleDelete(purchase)">🗑️</button>
                       </div>
                     </td>
@@ -1064,6 +1211,7 @@ function handleDelete(purchase) {
                 @edit="handleEdit"
                 @delete="handleDelete"
                 @toggle-check="toggleChecked"
+                @undo="requestUndoTransfer"
               />
             </div>
 
@@ -1101,6 +1249,31 @@ function handleDelete(purchase) {
       confirm-label="Supprimer la sélection"
       :is-processing="isBulkDeleting"
       @confirm="deleteSelected"
+    />
+
+    <TransferQuickAddModal v-model="isTransferEditOpen" :transfer="editingTransferRow" />
+
+    <ConfirmModal
+      :model-value="Boolean(transferDeleteTarget)"
+      title="Supprimer ce virement ?"
+      :message="`${transferDeleteTarget?.merchant} — ${formatCurrency(transferDeleteTarget?.amount ?? 0)} ne sera plus suivi dans l'application.`"
+      :note="transferDeleteError || 'Cette action est irréversible.'"
+      confirm-label="Supprimer"
+      :is-processing="isDeletingTransfer"
+      @update:model-value="transferDeleteTarget = null"
+      @confirm="confirmDeleteTransfer"
+    />
+
+    <ConfirmModal
+      :model-value="Boolean(undoTransferTarget)"
+      title="Annuler ce transfert ?"
+      message="Le transfert sera supprimé et remplacé par l'achat d'origine, tel qu'il était avant la conversion."
+      :note="undoTransferError || 'Cette action est irréversible.'"
+      confirm-label="Annuler le transfert"
+      confirming-label="Annulation..."
+      :is-processing="isUndoingTransfer"
+      @update:model-value="undoTransferTarget = null"
+      @confirm="confirmUndoTransfer"
     />
   </main>
 </template>

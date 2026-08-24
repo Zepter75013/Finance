@@ -31,6 +31,36 @@ const accountCards = computed(() => {
     .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }))
 })
 
+// Un Livret (sans relevé) n'a pas la même typologie qu'un compte courant —
+// pas d'achats/revenus, seulement des virements (crédit/débit). Les séparer
+// en deux groupes plutôt qu'une liste plate évite de mélanger deux
+// vocabulaires différents dans le même panneau.
+const accountGroups = computed(() => {
+  const standard = accountCards.value.filter((account) => account.hasStatements)
+  const simplified = accountCards.value.filter((account) => !account.hasStatements)
+  const groups = []
+
+  if (standard.length) {
+    groups.push({
+      key: 'standard',
+      title: 'Comptes courants',
+      hint: 'Achats, revenus, budgets et pointage.',
+      accounts: standard,
+    })
+  }
+
+  if (simplified.length) {
+    groups.push({
+      key: 'simplified',
+      title: 'Livrets',
+      hint: 'Uniquement alimentés par virement — crédit et débit, sans achats ni revenus.',
+      accounts: simplified,
+    })
+  }
+
+  return groups
+})
+
 const copyModalTarget = ref(null)
 const isCopyModalOpen = ref(false)
 
@@ -142,7 +172,7 @@ async function confirmDelete() {
     <PageHero
       eyebrow="Organisation"
       title="Comptes"
-      description="Gère tes comptes bancaires pour séparer achats, revenus et pointage par compte."
+      description="Gère tes comptes courants (achats, revenus, pointage) et tes livrets (crédit, débit)."
     >
       <template #actions>
         <button class="primary-btn" type="button" @click="handleCreate">
@@ -163,16 +193,18 @@ async function confirmDelete() {
       </button>
     </section>
 
-    <section v-else class="panel accounts-list-card">
+    <template v-else>
+    <section v-for="group in accountGroups" :key="group.key" class="panel accounts-list-card">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Comptes</p>
-          <h2>{{ accountCards.length }} compte{{ accountCards.length > 1 ? 's' : '' }}</h2>
+          <p class="eyebrow">{{ group.title }}</p>
+          <h2>{{ group.accounts.length }} compte{{ group.accounts.length > 1 ? 's' : '' }}</h2>
+          <p class="accounts-group-hint">{{ group.hint }}</p>
         </div>
       </div>
 
       <div class="accounts-list">
-        <article v-for="account in accountCards" :key="account.id" class="account-row">
+        <article v-for="account in group.accounts" :key="account.id" class="account-row">
           <div class="account-row-main">
             <span class="row-icon" aria-hidden="true">€</span>
             <div class="account-row-info">
@@ -225,6 +257,7 @@ async function confirmDelete() {
         </article>
       </div>
     </section>
+    </template>
 
     <QuickCreateModal
       v-model="isModalOpen"
@@ -420,6 +453,12 @@ async function confirmDelete() {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.72rem;
+}
+
+.accounts-group-hint {
+  margin: 0.2rem 0 0;
+  color: var(--text-dim, #8a939d);
+  font-size: 0.78rem;
 }
 
 @media (max-width: 640px) {

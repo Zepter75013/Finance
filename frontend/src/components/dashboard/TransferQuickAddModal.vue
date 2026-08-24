@@ -1,7 +1,9 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import ConfirmModal from '../Common/ConfirmModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
+import { currencySymbol } from '../../utils/format'
 
 const props = defineProps({
   modelValue: {
@@ -26,6 +28,8 @@ const isEditMode = computed(() => Boolean(props.transfer?.id))
 const otherAccountsList = computed(() =>
   accountsList.value.filter((account) => Number(account.id) !== Number(activeAccountId.value))
 )
+
+const currency = computed(() => currencySymbol())
 
 function initialForm() {
   if (props.transfer) {
@@ -117,6 +121,36 @@ async function submitForm() {
     isSubmitting.value = false
   }
 }
+
+// Un virement créé directement (pas via la conversion d'un achat/revenu) n'a
+// pas de ligne d'origine à restaurer.
+const canUndo = computed(
+  () => isEditMode.value && Boolean(props.transfer?.originType) && Boolean(props.transfer?.originPayload)
+)
+
+const isUndoConfirmOpen = ref(false)
+const isUndoing = ref(false)
+const undoError = ref('')
+
+function requestUndo() {
+  undoError.value = ''
+  isUndoConfirmOpen.value = true
+}
+
+async function confirmUndo() {
+  isUndoing.value = true
+  undoError.value = ''
+
+  try {
+    await store.undoTransfer(props.transfer)
+    isUndoConfirmOpen.value = false
+    emit('update:modelValue', false)
+  } catch (err) {
+    undoError.value = err instanceof Error ? err.message : 'Impossible d’annuler ce transfert.'
+  } finally {
+    isUndoing.value = false
+  }
+}
 </script>
 
 <template>
@@ -165,7 +199,7 @@ async function submitForm() {
         </label>
 
         <label class="form-field">
-          <span>Montant</span>
+          <span>Montant ({{ currency }})</span>
           <input v-model.number="form.amount" type="number" min="0.01" step="0.01" placeholder="0.00" />
         </label>
 
@@ -182,13 +216,36 @@ async function submitForm() {
         <p v-if="submitError" class="form-error">{{ submitError }}</p>
 
         <div class="modal-actions">
-          <button class="ghost-btn" type="button" @click="closeModal" :disabled="isSubmitting">Annuler</button>
-          <button class="primary-btn" type="submit" :disabled="isSubmitting">
-            {{ isSubmitting ? 'Enregistrement...' : isEditMode ? 'Enregistrer les modifications' : 'Ajouter' }}
+          <button
+            v-if="canUndo"
+            class="ghost-btn undo-link-btn"
+            type="button"
+            :disabled="isSubmitting"
+            @click="requestUndo"
+          >
+            ↩️ Annuler ce transfert
           </button>
+
+          <div class="modal-actions-right">
+            <button class="ghost-btn" type="button" @click="closeModal" :disabled="isSubmitting">Fermer</button>
+            <button class="primary-btn" type="submit" :disabled="isSubmitting">
+              {{ isSubmitting ? 'Enregistrement...' : isEditMode ? 'Enregistrer les modifications' : 'Ajouter' }}
+            </button>
+          </div>
         </div>
       </form>
     </section>
+
+    <ConfirmModal
+      v-model="isUndoConfirmOpen"
+      title="Annuler ce transfert ?"
+      message="Le transfert sera supprimé et remplacé par l'achat ou le revenu d'origine, tel qu'il était avant la conversion."
+      :note="undoError || 'Cette action est irréversible.'"
+      confirm-label="Annuler le transfert"
+      confirming-label="Annulation..."
+      :is-processing="isUndoing"
+      @confirm="confirmUndo"
+    />
   </div>
 </template>
 
@@ -328,10 +385,17 @@ async function submitForm() {
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
   margin-top: 0.2rem;
   grid-column: 1 / -1;
+}
+
+.modal-actions-right {
+  display: flex;
+  gap: 0.75rem;
+  margin-left: auto;
 }
 
 .ghost-btn {
@@ -343,5 +407,11 @@ async function submitForm() {
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.undo-link-btn {
+  border: 1px solid rgba(240, 169, 94, 0.28);
+  background: rgba(240, 169, 94, 0.1);
+  color: #f0a95e;
 }
 </style>

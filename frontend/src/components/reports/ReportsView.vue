@@ -25,6 +25,7 @@ import {
   viewLatestReportPdf,
 } from '../../services/reports'
 import { formatCurrency } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 ChartJS.register(
   Title,
@@ -41,7 +42,102 @@ ChartJS.register(
 const CHART_COLORS = ['#8fa8a0', '#a9b8c6', '#dcbf8a', '#96b4a7', '#b19dcb', '#708999', '#c99478']
 
 const store = usePurchasesStore()
-const { purchases, incomes, categoriesList, subCategoriesList } = storeToRefs(store)
+const { purchases, incomes, categoriesList, subCategoriesList, transfers, accountsList } = storeToRefs(store)
+
+// Un Livret n'a jamais d'achat/revenu — l'écran bascule sur un rapport
+// crédit/débit basé sur ses virements, en réutilisant telle quelle toute la
+// mécanique de filtrage/graphiques/PDF déjà écrite pour achats/revenus (un
+// virement sortant "devient" un achat, un virement entrant "devient" un
+// revenu, le compte lié tenant lieu de catégorie/source) — seuls les
+// libellés affichés changent.
+const activeAccount = computed(() =>
+  accountsList.value.find((account) => Number(account.id) === Number(store.activeAccountId)) || null
+)
+const isSimplified = computed(() => activeAccount.value?.hasStatements === false)
+
+// Même règle que computeRealBalance/le Dashboard : un solde initial déclaré
+// n'ancre le calcul que sur les virements enregistrés DEPUIS sa date — ceux
+// d'avant sont déjà représentés dedans, les compter en plus doublerait.
+const openingBalanceSinceDate = computed(() => activeAccount.value?.openingBalanceDate || null)
+
+const transferLegs = computed(() => {
+  const sinceDate = openingBalanceSinceDate.value
+
+  return transfers.value
+    .map((t) => {
+      const leg = signTransferLeg(t, store.activeAccountId)
+      return { ...leg, otherAccountName: leg.isOutgoing ? t.toAccountName : t.fromAccountName }
+    })
+    .filter((leg) => !sinceDate || leg.date >= sinceDate)
+})
+
+// Le solde initial compte comme un crédit (ou un débit s'il est négatif) au
+// même titre qu'un virement, daté du jour où il a été déclaré — il traverse
+// alors tel quel tout le filtrage par période/compte déjà en place (y
+// compris son exclusion si la période choisie ne le couvre pas), sans
+// mécanique séparée à écrire.
+const openingBalanceItem = computed(() => {
+  const account = activeAccount.value
+  if (!account?.openingBalanceDate || account.openingBalanceAmount == null) return null
+
+  return { date: account.openingBalanceDate, amount: Number(account.openingBalanceAmount) }
+})
+
+const debitItems = computed(() => {
+  const items = transferLegs.value
+    .filter((leg) => leg.isOutgoing)
+    .map((leg) => ({
+      date: leg.date,
+      amount: Math.abs(leg.amount),
+      merchant: leg.otherAccountName,
+      category: leg.otherAccountName,
+      subCategory: '',
+      note: '',
+    }))
+
+  const opening = openingBalanceItem.value
+  if (opening && opening.amount < 0) {
+    items.push({
+      date: opening.date,
+      amount: Math.abs(opening.amount),
+      merchant: 'Solde initial',
+      category: 'Solde initial',
+      subCategory: '',
+      note: '',
+    })
+  }
+
+  return items
+})
+
+const creditItems = computed(() => {
+  const items = transferLegs.value
+    .filter((leg) => !leg.isOutgoing)
+    .map((leg) => ({
+      income_date: leg.date,
+      amount: leg.amount,
+      source: leg.otherAccountName,
+      category: leg.otherAccountName,
+      subCategory: '',
+      note: '',
+      operationLabel: '',
+    }))
+
+  const opening = openingBalanceItem.value
+  if (opening && opening.amount > 0) {
+    items.push({
+      income_date: opening.date,
+      amount: opening.amount,
+      source: 'Solde initial',
+      category: 'Solde initial',
+      subCategory: '',
+      note: '',
+      operationLabel: '',
+    })
+  }
+
+  return items
+})
 
 const reportType = ref('both')
 // "Cette année" par défaut (pas "Tout") — générer un rapport sur tout
@@ -117,6 +213,20 @@ const includesIncomes = computed(() => reportType.value === 'both' || reportType
 const categoryFilterOptions = computed(() => {
   const values = new Set()
 
+  if (isSimplified.value) {
+    // Un virement n'a pas de catégorie — le compte lié en tient lieu.
+    if (includesPurchases.value) {
+      for (const item of debitItems.value) values.add(item.category)
+    }
+    if (includesIncomes.value) {
+      for (const item of creditItems.value) values.add(item.category)
+    }
+
+    return Array.from(values)
+      .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
+      .map((value) => ({ value, label: value }))
+  }
+
   if (includesPurchases.value) {
     for (const category of categoriesList.value) {
       values.add(category.name)
@@ -181,7 +291,9 @@ const subCategoryGroups = computed(() => {
 const filteredReportPurchases = computed(() => {
   if (!includesPurchases.value) return []
 
-  return purchases.value.filter((purchase) => {
+  const source = isSimplified.value ? debitItems.value : purchases.value
+
+  return source.filter((purchase) => {
     if (!isWithinRange(purchase.date, reportPeriod.value)) return false
 
     if (reportCategories.value.length) {
@@ -201,7 +313,9 @@ const filteredReportPurchases = computed(() => {
 const filteredReportIncomes = computed(() => {
   if (!includesIncomes.value) return []
 
-  return incomes.value.filter((income) => {
+  const source = isSimplified.value ? creditItems.value : incomes.value
+
+  return source.filter((income) => {
     if (!isWithinRange(income.income_date, reportPeriod.value)) return false
 
     if (reportCategories.value.length) {
@@ -312,7 +426,7 @@ const reportTransactions = computed(() => {
   for (const purchase of filteredReportPurchases.value) {
     rows.push({
       date: purchase.date,
-      type: 'Achat',
+      type: isSimplified.value ? 'Débit' : 'Achat',
       categoryOrSource: purchase.category || '—',
       subCategory: purchase.subCategory || '—',
       label: purchase.merchant || purchase.note || '—',
@@ -323,7 +437,7 @@ const reportTransactions = computed(() => {
   for (const income of filteredReportIncomes.value) {
     rows.push({
       date: income.income_date,
-      type: 'Revenu',
+      type: isSimplified.value ? 'Crédit' : 'Revenu',
       categoryOrSource: income.source || income.category || '—',
       subCategory: income.subCategory || '—',
       label: income.note || income.operationLabel || '—',
@@ -353,6 +467,12 @@ const periodLabel = computed(() => {
 })
 
 const typeLabel = computed(() => {
+  if (isSimplified.value) {
+    if (reportType.value === 'achats') return 'Débit uniquement'
+    if (reportType.value === 'revenus') return 'Crédit uniquement'
+    return 'Débit et crédit'
+  }
+
   if (reportType.value === 'achats') return 'Achats uniquement'
   if (reportType.value === 'revenus') return 'Revenus uniquement'
   return 'Achats et revenus'
@@ -362,7 +482,7 @@ const criteriaDescription = computed(() => {
   const parts = [`Période : ${periodLabel.value}`, `Type : ${typeLabel.value}`]
 
   if (reportCategories.value.length) {
-    parts.push(`Catégorie(s) : ${reportCategories.value.join(', ')}`)
+    parts.push(`${isSimplified.value ? 'Compte(s) lié(s)' : 'Catégorie(s)'} : ${reportCategories.value.join(', ')}`)
 
     if (reportSubCategories.value.length) {
       const labels = reportSubCategories.value.map((key) => {
@@ -438,7 +558,12 @@ async function renderCharts() {
         animation: false,
         plugins: {
           legend: { position: 'right', labels: { color: '#3a3f33', font: { size: 11 }, boxWidth: 12 } },
-          title: { display: true, text: 'Achats par catégorie', color: '#22262a', font: { size: 13, weight: '600' } },
+          title: {
+            display: true,
+            text: isSimplified.value ? 'Débit par compte lié' : 'Achats par catégorie',
+            color: '#22262a',
+            font: { size: 13, weight: '600' },
+          },
         },
       },
     })
@@ -456,7 +581,12 @@ async function renderCharts() {
         animation: false,
         plugins: {
           legend: { position: 'right', labels: { color: '#3a3f33', font: { size: 11 }, boxWidth: 12 } },
-          title: { display: true, text: 'Revenus par source', color: '#22262a', font: { size: 13, weight: '600' } },
+          title: {
+            display: true,
+            text: isSimplified.value ? 'Crédit par compte lié' : 'Revenus par source',
+            color: '#22262a',
+            font: { size: 13, weight: '600' },
+          },
         },
       },
     })
@@ -465,10 +595,18 @@ async function renderCharts() {
   if (monthlyEvolution.value.labels.length && evolutionCanvas.value) {
     const datasets = []
     if (includesPurchases.value) {
-      datasets.push({ label: 'Dépenses', data: monthlyEvolution.value.spending, backgroundColor: '#c99478' })
+      datasets.push({
+        label: isSimplified.value ? 'Débit' : 'Dépenses',
+        data: monthlyEvolution.value.spending,
+        backgroundColor: '#c99478',
+      })
     }
     if (includesIncomes.value) {
-      datasets.push({ label: 'Revenus', data: monthlyEvolution.value.income, backgroundColor: '#8fa8a0' })
+      datasets.push({
+        label: isSimplified.value ? 'Crédit' : 'Revenus',
+        data: monthlyEvolution.value.income,
+        backgroundColor: '#8fa8a0',
+      })
     }
 
     evolutionChart = new ChartJS(evolutionCanvas.value.getContext('2d'), {
@@ -610,14 +748,14 @@ async function generateReport() {
 
     const kpis = []
     if (includesPurchases.value) {
-      kpis.push({ label: 'Total dépensé', value: formatCurrencyForPdf(totalPurchasesAmount.value) })
-      kpis.push({ label: 'Nb achats', value: String(purchaseCount.value) })
-      kpis.push({ label: 'Panier moyen', value: formatCurrencyForPdf(averagePurchase.value) })
+      kpis.push({ label: isSimplified.value ? 'Total débit' : 'Total dépensé', value: formatCurrencyForPdf(totalPurchasesAmount.value) })
+      kpis.push({ label: isSimplified.value ? 'Nb débits' : 'Nb achats', value: String(purchaseCount.value) })
+      kpis.push({ label: isSimplified.value ? 'Débit moyen' : 'Panier moyen', value: formatCurrencyForPdf(averagePurchase.value) })
     }
     if (includesIncomes.value) {
-      kpis.push({ label: 'Total revenus', value: formatCurrencyForPdf(totalIncomesAmount.value) })
-      kpis.push({ label: 'Nb revenus', value: String(incomeCount.value) })
-      kpis.push({ label: 'Revenu moyen', value: formatCurrencyForPdf(averageIncome.value) })
+      kpis.push({ label: isSimplified.value ? 'Total crédit' : 'Total revenus', value: formatCurrencyForPdf(totalIncomesAmount.value) })
+      kpis.push({ label: isSimplified.value ? 'Nb crédits' : 'Nb revenus', value: String(incomeCount.value) })
+      kpis.push({ label: isSimplified.value ? 'Crédit moyen' : 'Revenu moyen', value: formatCurrencyForPdf(averageIncome.value) })
     }
     if (includesPurchases.value && includesIncomes.value) {
       kpis.push({ label: 'Solde net', value: formatCurrencyForPdf(netBalance.value) })
@@ -679,19 +817,25 @@ async function generateReport() {
 
     autoTable(doc, {
       startY: 22,
-      head: [['Date', 'Type', 'Catégorie / Source', 'Sous-catégorie', 'Libellé', 'Montant']],
-      body: reportTransactions.value.map((row) => [
-        formatTableDate(row.date),
-        row.type,
-        row.categoryOrSource,
-        row.subCategory,
-        row.label,
-        formatCurrencyForPdf(row.amount),
-      ]),
+      head: isSimplified.value
+        ? [['Date', 'Type', 'Compte lié', 'Libellé', 'Montant']]
+        : [['Date', 'Type', 'Catégorie / Source', 'Sous-catégorie', 'Libellé', 'Montant']],
+      body: reportTransactions.value.map((row) =>
+        isSimplified.value
+          ? [formatTableDate(row.date), row.type, row.categoryOrSource, row.label, formatCurrencyForPdf(row.amount)]
+          : [
+              formatTableDate(row.date),
+              row.type,
+              row.categoryOrSource,
+              row.subCategory,
+              row.label,
+              formatCurrencyForPdf(row.amount),
+            ]
+      ),
       styles: { fontSize: 8, cellPadding: 2.4 },
       headStyles: { fillColor: [58, 74, 66], textColor: 255 },
       alternateRowStyles: { fillColor: [244, 245, 242] },
-      columnStyles: { 5: { halign: 'right' } },
+      columnStyles: { [isSimplified.value ? 4 : 5]: { halign: 'right' } },
       margin: { left: marginX, right: marginX },
     })
 
@@ -727,7 +871,11 @@ async function generateReport() {
     <PageHero
       eyebrow="Synthèse"
       title="Éditions"
-      description="Génère un état PDF complet de tes finances : indicateurs clés, répartitions, évolution mensuelle et détail des transactions."
+      :description="
+        isSimplified
+          ? 'Génère un état PDF de ce compte : crédit/débit, répartition par compte lié, évolution mensuelle et détail des virements.'
+          : 'Génère un état PDF complet de tes finances : indicateurs clés, répartitions, évolution mensuelle et détail des transactions.'
+      "
     />
 
     <section class="panel latest-report-card">
@@ -799,21 +947,28 @@ async function generateReport() {
         <label class="sort-field">
           <span class="sort-label">Type</span>
           <select v-model="reportType" class="sort-select">
-            <option value="both">Achats et revenus</option>
-            <option value="achats">Achats uniquement</option>
-            <option value="revenus">Revenus uniquement</option>
+            <template v-if="isSimplified">
+              <option value="both">Débit et crédit</option>
+              <option value="achats">Débit uniquement</option>
+              <option value="revenus">Crédit uniquement</option>
+            </template>
+            <template v-else>
+              <option value="both">Achats et revenus</option>
+              <option value="achats">Achats uniquement</option>
+              <option value="revenus">Revenus uniquement</option>
+            </template>
           </select>
         </label>
 
         <MultiSelectDropdown
           v-model="reportCategories"
-          label="Catégorie"
-          all-label="Toutes les catégories"
+          :label="isSimplified ? 'Compte lié' : 'Catégorie'"
+          :all-label="isSimplified ? 'Tous les comptes liés' : 'Toutes les catégories'"
           :options="categoryFilterOptions"
         />
 
         <MultiSelectDropdown
-          v-if="reportCategories.length"
+          v-if="reportCategories.length && !isSimplified"
           v-model="reportSubCategories"
           label="Sous-catégorie"
           all-label="Toutes les sous-catégories"
@@ -827,11 +982,11 @@ async function generateReport() {
 
       <section class="reports-stats-grid">
         <article v-if="includesPurchases" class="stat-card-mini">
-          <p class="eyebrow">Total dépensé</p>
+          <p class="eyebrow">{{ isSimplified ? 'Total débit' : 'Total dépensé' }}</p>
           <h3>{{ formatCurrency(totalPurchasesAmount) }}</h3>
         </article>
         <article v-if="includesIncomes" class="stat-card-mini">
-          <p class="eyebrow">Total revenus</p>
+          <p class="eyebrow">{{ isSimplified ? 'Total crédit' : 'Total revenus' }}</p>
           <h3>{{ formatCurrency(totalIncomesAmount) }}</h3>
         </article>
         <article v-if="includesPurchases && includesIncomes" class="stat-card-mini">

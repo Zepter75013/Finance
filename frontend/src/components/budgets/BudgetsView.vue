@@ -15,7 +15,7 @@ import {
 import PageHero from '../Common/PageHero.vue'
 import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
-import { formatCurrency } from '../../utils/format'
+import { formatCurrency, currencySymbol } from '../../utils/format'
 
 ChartJS.register(Title, Tooltip, Legend, CategoryScale, LinearScale, BarElement, BarController)
 
@@ -175,7 +175,9 @@ const budgetModalConfig = computed(() => {
   return {
     eyebrow: `Ajuster ce mois — ${currentMonthLabel}`,
     title: `${isRevenue ? 'Revenu prévu' : 'Budget'} pour « ${category?.name ?? ''} »`,
-    label: isRevenue ? 'Montant prévu pour ce mois (€)' : 'Montant pour ce mois (€)',
+    label: isRevenue
+      ? `Montant prévu pour ce mois (${currencySymbol()})`
+      : `Montant pour ce mois (${currencySymbol()})`,
     placeholder: 'Ex: 150',
     confirmLabel: 'Enregistrer',
     initialValue: category?.budget > 0 ? category.budget.toFixed(2) : '',

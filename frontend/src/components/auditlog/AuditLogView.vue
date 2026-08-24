@@ -44,6 +44,26 @@ function entityLabel(entry) {
   const type = entry.entity_type || '—'
   return entry.entity_id ? `${type} #${entry.entity_id}` : type
 }
+
+// Seules les requêtes POST/PUT/DELETE sont journalisées — les codes
+// possibles restent donc un petit ensemble connu, couvert explicitement
+// plutôt que d'afficher le numéro brut.
+const STATUS_LABELS = {
+  200: 'Succès',
+  201: 'Créé',
+  204: 'Succès',
+  400: 'Requête invalide',
+  401: 'Non authentifié',
+  403: 'Refusé',
+  404: 'Introuvable',
+  405: 'Méthode non autorisée',
+  409: 'Conflit',
+  500: 'Erreur serveur',
+}
+
+function statusLabel(code) {
+  return STATUS_LABELS[code] || (code >= 400 ? `Échec (${code})` : `Succès (${code})`)
+}
 </script>
 
 <template>
@@ -90,7 +110,7 @@ function entityLabel(entry) {
               <td>{{ actionLabel(entry.method) }}</td>
               <td>{{ entityLabel(entry) }}</td>
               <td :class="entry.status_code >= 400 ? 'audit-log-status-error' : 'audit-log-status-ok'">
-                {{ entry.status_code }}
+                {{ statusLabel(entry.status_code) }}
               </td>
             </tr>
           </tbody>
