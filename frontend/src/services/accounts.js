@@ -122,6 +122,25 @@ export async function clearOpeningBalance(id) {
   return parseJson(response)
 }
 
+export async function updateHasStatements(id, hasStatements) {
+  const response = await fetch(`${API_BASE_URL}/accounts/${id}/has-statements`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ has_statements: hasStatements }),
+  })
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, 'Impossible de mettre à jour ce réglage.')
+    throw new Error(message)
+  }
+
+  return parseJson(response)
+}
+
 export async function deleteAccount(id) {
   const response = await fetch(`${API_BASE_URL}/accounts/${id}`, {
     method: 'DELETE',

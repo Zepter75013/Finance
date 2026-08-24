@@ -125,6 +125,18 @@ func NewRouter(db *sql.DB, cfg config.Config) (http.Handler, *recurring.Service,
 			return
 		}
 
+		if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/has-statements") {
+			switch r.Method {
+			case http.MethodPut:
+				accountHandler.UpdateHasStatements(w, r)
+			case http.MethodOptions:
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
 		switch r.Method {
 		case http.MethodPut:
 			accountHandler.Update(w, r)

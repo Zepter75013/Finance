@@ -29,6 +29,7 @@ import {
   deleteAccount as deleteAccountApi,
   updateOpeningBalance as updateOpeningBalanceApi,
   clearOpeningBalance as clearOpeningBalanceApi,
+  updateHasStatements as updateHasStatementsApi,
 } from '../services/accounts'
 import { fetchStatements } from '../services/statements'
 import { fetchBudgets, upsertBudget, deleteBudget } from '../services/budgets'
@@ -190,6 +191,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
       transferCount: Number(account.transfer_count || 0),
       openingBalanceAmount: account.opening_balance_amount ?? null,
       openingBalanceDate: account.opening_balance_date ?? null,
+      hasStatements: account.has_statements !== false,
     }
   }
 
@@ -231,6 +233,8 @@ export const usePurchasesStore = defineStore('purchases', () => {
       fromStatementReference: t.from_statement_reference || '',
       toIsReconciled: Boolean(t.to_is_reconciled),
       toStatementReference: t.to_statement_reference || '',
+      originType: t.origin_type || null,
+      originPayload: t.origin_payload || null,
     }
   }
 
@@ -238,6 +242,8 @@ export const usePurchasesStore = defineStore('purchases', () => {
     return {
       from_account_id: Number(t.fromAccountId || 0),
       to_account_id: Number(t.toAccountId || 0),
+      origin_type: t.originType || null,
+      origin_payload: t.originPayload || null,
       amount: Number(t.amount || 0),
       transfer_date: t.date || new Date().toISOString().slice(0, 10),
       note: t.note?.trim() || '',
@@ -964,6 +970,19 @@ export const usePurchasesStore = defineStore('purchases', () => {
     return mappedAccount
   }
 
+  async function setAccountHasStatements(id, hasStatements) {
+    error.value = ''
+
+    const updated = await updateHasStatementsApi(id, hasStatements)
+    const mappedAccount = mapAccountFromApi(updated)
+
+    accountsList.value = accountsList.value.map((currentAccount) => {
+      return Number(currentAccount.id) === Number(id) ? mappedAccount : currentAccount
+    })
+
+    return mappedAccount
+  }
+
   async function createTransfer(transfer) {
     error.value = ''
 
@@ -999,6 +1018,44 @@ export const usePurchasesStore = defineStore('purchases', () => {
     await deleteTransferApi(id)
 
     transfers.value = transfers.value.filter((t) => t.id !== id)
+  }
+
+  // Annule un virement créé par conversion d'une ligne (voir la case
+  // « virement » de PurchaseFormModal/IncomeFormModal, ou l'import CSV) :
+  // recrée l'achat/revenu d'origine à partir de sa copie (originPayload) puis
+  // supprime le virement — retour exact à l'état initial. Un virement sans
+  // copie d'origine (créé directement, ex: le bouton du Dashboard LDDS) ne
+  // peut pas être annulé automatiquement : rien à restaurer.
+  async function undoTransfer(transfer) {
+    error.value = ''
+
+    if (!transfer.originType || !transfer.originPayload) {
+      throw new Error('Ce virement n’a pas de ligne d’origine — il ne peut pas être annulé automatiquement.')
+    }
+
+    let originalRow
+    try {
+      originalRow = JSON.parse(transfer.originPayload)
+    } catch {
+      throw new Error('Impossible de lire les données d’origine de ce virement.')
+    }
+
+    if (transfer.originType === 'achat') {
+      const payload = buildPurchasePayload(originalRow)
+      validatePurchasePayload(payload)
+      await createPurchase(payload)
+    } else {
+      const payload = buildIncomePayload(originalRow)
+      validateIncomePayload(payload)
+      await createIncomeApi(payload)
+    }
+
+    await removeTransfer(transfer.id)
+    // Recharge tout plutôt que de patcher purchases.value/incomes.value à la
+    // main : la ligne restaurée peut appartenir à l'autre compte du virement
+    // (annulation déclenchée depuis le côté crédité), pas forcément celui
+    // actuellement actif.
+    await reloadAccountScopedData()
   }
 
   async function removeAccount(id) {
@@ -1211,6 +1268,7 @@ export const usePurchasesStore = defineStore('purchases', () => {
     transfers,
     transferLegsForActiveAccount,
     latestLockedStatement,
+    activeAccount,
     realCurrentBalance,
     isRealBalanceEstimate,
     realBalanceSource,
@@ -1234,12 +1292,14 @@ export const usePurchasesStore = defineStore('purchases', () => {
     editAccount,
     setAccountOpeningBalance,
     clearAccountOpeningBalance,
+    setAccountHasStatements,
     removeAccount,
     copyCategoriesFromAccount,
     loadTransfers,
     createTransfer,
     editTransfer,
     removeTransfer,
+    undoTransfer,
     createIncome,
     editIncome,
     removeIncome,

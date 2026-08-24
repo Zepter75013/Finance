@@ -14,6 +14,13 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // Vrai pour un compte sans notion de relevé (ex: Livret) — masque les
+  // entrées qui n'ont rien à montrer pour lui (achats/revenus, budget,
+  // récurrences, pointage) et adapte le libellé d'import.
+  isSimplifiedNav: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['navigate', 'logout', 'change-password', 'about'])
@@ -25,7 +32,6 @@ const ICON_EMOJI = {
   consolidated: '🌐',
   monthly: '📅',
   recurring: '🔁',
-  transfers: '🔀',
   purchases: '🛍️',
   incomes: '💰',
   budgets: '🎯',
@@ -46,7 +52,6 @@ const ICON_COLORS = {
   consolidated: '#7aa2f7',
   monthly: '#e0a15c',
   recurring: '#b18cf0',
-  transfers: '#5cc8d1',
   purchases: '#f0a95e',
   incomes: '#5ecb8f',
   budgets: '#b18cf0',
@@ -62,7 +67,21 @@ const ICON_COLORS = {
   about: '#8fa8a0',
 }
 
-const navItems = [
+// Entrées sans utilité pour un compte sans notion de relevé (ex: Livret) —
+// il n'a jamais d'achat/revenu, donc rien à budgéter, rien à récurrer, rien
+// à pointer.
+const SIMPLIFIED_NAV_HIDDEN_KEYS = new Set([
+  'monthly',
+  'purchases',
+  'incomes',
+  'budgets',
+  'recurring',
+  'reconciliation',
+  'categories',
+  'import-group',
+])
+
+const ALL_NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { key: 'consolidated', label: 'Tous les comptes', icon: 'consolidated' },
   { key: 'monthly', label: 'Revenus & Dépenses', icon: 'monthly' },
@@ -70,7 +89,6 @@ const navItems = [
   { key: 'incomes', label: 'Revenus', icon: 'incomes' },
   { key: 'budgets', label: 'Budgets', icon: 'budgets' },
   { key: 'recurring', label: 'Récurrences', icon: 'recurring' },
-  { key: 'transfers', label: 'Transferts', icon: 'transfers' },
   { key: 'reconciliation', label: 'Pointage', icon: 'reconciliation' },
   { key: 'accounts', label: 'Comptes', icon: 'accounts' },
   { key: 'categories', label: 'Catégories', icon: 'categories' },
@@ -90,6 +108,21 @@ const navItems = [
   { key: 'preferences', label: 'Préférences', icon: 'preferences' },
   { key: 'about', label: 'À propos', icon: 'about', action: 'about' },
 ]
+
+const navItems = computed(() => {
+  if (!props.isSimplifiedNav) return ALL_NAV_ITEMS
+
+  return ALL_NAV_ITEMS.filter((item) => !SIMPLIFIED_NAV_HIDDEN_KEYS.has(item.key)).map((item) => {
+    if (item.key !== 'import-group') return item
+
+    return {
+      ...item,
+      children: item.children.map((child) =>
+        child.key === 'import' ? { ...child, label: 'Débit / Crédit' } : child
+      ),
+    }
+  })
+})
 
 function handleNavClick(item) {
   if (item.action === 'about') {

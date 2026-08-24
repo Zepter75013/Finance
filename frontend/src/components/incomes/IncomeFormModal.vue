@@ -64,7 +64,13 @@
 
         <label class="form-field">
           <span>Référence</span>
-          <input v-model.trim="form.reference" type="text" placeholder="Référence de l'opération" />
+          <input
+            v-model.trim="form.reference"
+            type="text"
+            placeholder="Référence de l'opération"
+            readonly
+            title="Référence bancaire — non modifiable (sert à détecter les doublons à l'import)"
+          />
         </label>
 
         <label class="form-field">
@@ -128,6 +134,23 @@
           <input v-model.trim="form.statementReference" type="text" placeholder="Ex: 2026-01" />
         </label>
 
+        <div v-if="isEditMode" class="form-field form-field-full transfer-section">
+          <label class="transfer-toggle">
+            <input v-model="isTransfer" type="checkbox" />
+            <span>C'est en réalité un virement depuis un autre compte</span>
+          </label>
+
+          <label v-if="isTransfer" class="form-field transfer-account-field">
+            <span>Compte source</span>
+            <select v-model.number="transferAccountId">
+              <option :value="null">Choisir un compte</option>
+              <option v-for="account in otherAccountsList" :key="account.id" :value="account.id">
+                {{ account.name }}
+              </option>
+            </select>
+          </label>
+        </div>
+
         <p v-if="submitError" class="form-error">
           {{ submitError }}
         </p>
@@ -136,13 +159,19 @@
           <button class="ghost-btn" type="button" @click="closeModal" :disabled="isSubmitting">
             Annuler
           </button>
-          <button class="primary-btn" type="submit" :disabled="isSubmitting">
+          <button
+            class="primary-btn"
+            type="submit"
+            :disabled="isSubmitting || (isTransfer && !transferAccountId)"
+          >
             {{
               isSubmitting
                 ? 'Enregistrement...'
-                : isEditMode
-                  ? 'Enregistrer les modifications'
-                  : 'Ajouter le revenu'
+                : isTransfer
+                  ? 'Transférer'
+                  : isEditMode
+                    ? 'Enregistrer les modifications'
+                    : 'Ajouter le revenu'
             }}
           </button>
         </div>
@@ -208,6 +237,13 @@ const subCategoryModalError = ref('')
 
 const isEditMode = computed(() => Boolean(props.income?.id))
 
+const isTransfer = ref(false)
+const transferAccountId = ref(null)
+
+const otherAccountsList = computed(() =>
+  accountsList.value.filter((account) => Number(account.id) !== Number(form.accountId))
+)
+
 const revenuCategories = computed(() =>
   categoriesList.value
     .filter((category) => category.type === 'revenu')
@@ -260,6 +296,8 @@ watch(
       isSubCategoryModalOpen.value = false
       categoryModalError.value = ''
       subCategoryModalError.value = ''
+      isTransfer.value = false
+      transferAccountId.value = null
     }
   },
   { deep: true, immediate: true }
@@ -357,7 +395,28 @@ async function submitForm() {
       statementReference: form.isReconciled ? form.statementReference : '',
     }
 
-    if (isEditMode.value) {
+    if (isEditMode.value && isTransfer.value && transferAccountId.value) {
+      // Un revenu vient toujours du compte choisi (débit) vers son propre
+      // compte (crédit) — sens inverse d'un achat. Copie de la ligne (avec
+      // ses modifications) gardée dans origin_payload pour l'annulation et
+      // l'affichage dans Pointage (voir même logique côté achat).
+      await store.createTransfer({
+        fromAccountId: transferAccountId.value,
+        toAccountId: payload.accountId,
+        amount: payload.amount,
+        date: payload.income_date,
+        note: payload.source,
+        fromIsReconciled: false,
+        fromStatementReference: '',
+        toIsReconciled: payload.isReconciled,
+        toStatementReference: payload.statementReference,
+        originType: 'revenu',
+        originPayload: JSON.stringify(payload),
+      })
+
+      await store.removeIncome(props.income.id)
+      emit('saved', { type: 'transfer', source: payload.source })
+    } else if (isEditMode.value) {
       await store.editIncome(props.income.id, payload)
       emit('saved', { type: 'edit', source: payload.source })
     } else {

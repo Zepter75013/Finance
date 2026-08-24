@@ -12,6 +12,7 @@ var sqliteSchemaStatements = []string{
 		name TEXT NOT NULL,
 		opening_balance_amount REAL,
 		opening_balance_date TEXT,
+		has_statements INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE (name)
@@ -75,6 +76,8 @@ var sqliteSchemaStatements = []string{
 		from_statement_reference TEXT NOT NULL DEFAULT '',
 		to_is_reconciled INTEGER NOT NULL DEFAULT 0,
 		to_statement_reference TEXT NOT NULL DEFAULT '',
+		origin_type TEXT,
+		origin_payload TEXT,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,

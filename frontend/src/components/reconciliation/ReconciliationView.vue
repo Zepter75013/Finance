@@ -4,6 +4,9 @@ import { storeToRefs } from 'pinia'
 import PageHero from '../Common/PageHero.vue'
 import ColumnVisibilityMenu from '../Common/ColumnVisibilityMenu.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
+import PurchaseFormModal from '../dashboard/PurchaseFormModal.vue'
+import IncomeFormModal from '../incomes/IncomeFormModal.vue'
+import TransferQuickAddModal from '../dashboard/TransferQuickAddModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useTableColumns } from '../../composables/useTableColumns'
 import {
@@ -20,7 +23,15 @@ import { formatCurrency, formatDate } from '../../utils/format'
 import { signTransferLeg } from '../../utils/realBalance'
 
 const store = usePurchasesStore()
-const { purchases, incomes, transfers } = storeToRefs(store)
+const { purchases, incomes, transfers, accountsList } = storeToRefs(store)
+
+// Un compte sans notion de relevé (ex: Livret, alimenté uniquement par
+// virement) n'a rien à pointer — le rapprochement contre un relevé bancaire
+// n'a structurellement aucun sens pour lui.
+const activeAccount = computed(() =>
+  accountsList.value.find((account) => Number(account.id) === Number(store.activeAccountId)) || null
+)
+const hasStatements = computed(() => activeAccount.value?.hasStatements !== false)
 
 // Même compte actif que les écrans Achats/Revenus/Import (partagé via le
 // store) — chaque compte a sa propre suite de relevés et son propre solde
@@ -70,11 +81,20 @@ function toggleSection(key) {
   localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(collapsedSections))
 }
 
-const STORAGE_KEY = 'reconciliationSettings'
+// Namespacée par compte — chaque compte a son propre relevé en cours de
+// saisie. Une clé unique partagée entre tous les comptes faisait apparaître
+// le brouillon d'un compte (numéro de relevé, soldes, période) quand on
+// consultait le Pointage d'un AUTRE compte juste après avoir changé de
+// compte actif ailleurs dans l'app (ex: entre les deux comptes d'un
+// virement) — ce composant est démonté/remonté à chaque navigation, donc ce
+// n'était pas qu'un problème au tout premier chargement.
+function storageKey() {
+  return `reconciliationSettings:${activeAccountId.value}`
+}
 
 function loadStoredSettings() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+    return JSON.parse(localStorage.getItem(storageKey()) || '{}')
   } catch {
     return {}
   }
@@ -89,20 +109,18 @@ function defaultEndDate() {
   return new Date().toISOString().slice(0, 10)
 }
 
-const stored = loadStoredSettings()
-
 const settings = reactive({
-  statementNumber: stored.statementNumber || '',
-  statementDate: stored.statementDate || '',
-  startBalance: stored.startBalance ?? null,
-  endBalance: stored.endBalance ?? null,
-  periodStart: stored.periodStart || defaultStartDate(),
-  periodEnd: stored.periodEnd || defaultEndDate(),
+  statementNumber: '',
+  statementDate: '',
+  startBalance: null,
+  endBalance: null,
+  periodStart: defaultStartDate(),
+  periodEnd: defaultEndDate(),
 })
 
 function persistSettings() {
   localStorage.setItem(
-    STORAGE_KEY,
+    storageKey(),
     JSON.stringify({
       statementNumber: settings.statementNumber,
       statementDate: settings.statementDate,
@@ -142,29 +160,32 @@ async function loadStatements() {
   }
 }
 
-// Recharge les relevés à chaque changement de compte. Au tout premier
-// chargement, les réglages en cours (potentiellement un relevé non encore
-// enregistré) sont laissés tels quels, comme avant l'ajout des comptes — ils
-// ne sont resynchronisés sur le dernier relevé du compte que lors d'un vrai
-// changement de compte explicite.
-let isInitialAccountLoad = true
-
+// Recharge les relevés ET les réglages à chaque activation du compte —
+// aussi bien au tout premier montage qu'à un changement explicite : ce
+// composant est démonté/remonté à chaque navigation (pas de keep-alive),
+// donc "premier montage" ne veut pas dire "même compte qu'avant". Priorité
+// au brouillon propre à ce compte (localStorage scopé), sinon son dernier
+// relevé enregistré, sinon un relevé vierge.
 watch(
   activeAccountId,
   async (accountId) => {
     if (!accountId) return
 
-    const wasInitial = isInitialAccountLoad
-    isInitialAccountLoad = false
-
     await loadStatements()
 
-    if (!wasInitial) {
-      if (savedStatements.value[0]) {
-        loadStatementIntoSettings(savedStatements.value[0])
-      } else {
-        startNewStatement()
-      }
+    const stored = loadStoredSettings()
+
+    if (Object.keys(stored).length > 0) {
+      settings.statementNumber = stored.statementNumber || ''
+      settings.statementDate = stored.statementDate || ''
+      settings.startBalance = stored.startBalance ?? null
+      settings.endBalance = stored.endBalance ?? null
+      settings.periodStart = stored.periodStart || defaultStartDate()
+      settings.periodEnd = stored.periodEnd || defaultEndDate()
+    } else if (savedStatements.value[0]) {
+      loadStatementIntoSettings(savedStatements.value[0])
+    } else {
+      startNewStatement()
     }
   },
   { immediate: true }
@@ -449,7 +470,7 @@ function getSearchableValue(row, column) {
     case 'dateValeur':
       return formatDate(row[column])
     case 'type':
-      return row.type === 'achat' ? 'achat' : 'revenu'
+      return row.type === 'achat' ? 'achat' : row.type === 'revenu' ? 'revenu' : 'virement'
     default:
       return row[column]
   }
@@ -492,6 +513,46 @@ watch([visibilityFilter, searchQuery, searchColumn, sortColumn, sortDirection], 
     })
   )
 })
+
+// Un virement issu de la conversion d'une ligne de Pointage garde une copie
+// de cette ligne (origin_payload, voir PurchaseFormModal/IncomeFormModal) — on la relit ici
+// pour ne pas perdre catégorie/source, référence et dates d'opération/valeur
+// dans le tableau, plutôt que de les laisser vides comme pour un virement
+// sans ligne d'origine (créé directement, ex: import CSV).
+function parseOriginPayload(t) {
+  if (!t.originPayload) return null
+
+  try {
+    return JSON.parse(t.originPayload)
+  } catch {
+    return null
+  }
+}
+
+function mapTransferRow(t) {
+  const leg = signTransferLeg(t, activeAccountId.value)
+  const dateCompta = leg.date
+  const otherAccountName = leg.isOutgoing ? t.toAccountName : t.fromAccountName
+  const origin = parseOriginPayload(t)
+
+  return {
+    id: `transfer-${t.id}`,
+    sourceId: t.id,
+    type: 'transfer',
+    dateCompta,
+    dateOperation: origin?.operationDate || dateCompta,
+    dateValeur: origin?.valueDate || '',
+    datePeriode: dateCompta,
+    label: `Virement ${leg.isOutgoing ? 'vers' : 'depuis'} ${otherAccountName}`,
+    reference: origin?.reference || '',
+    meta: origin?.category || (leg.isOutgoing ? 'Sortant' : 'Entrant'),
+    amount: leg.amount,
+    isReconciled: leg.isOutgoing ? t.fromIsReconciled : t.toIsReconciled,
+    statementReference: leg.statement_reference,
+    isOutgoing: leg.isOutgoing,
+    raw: t,
+  }
+}
 
 function sortIndicator(column) {
   if (sortColumn.value !== column) return ''
@@ -560,29 +621,7 @@ const periodTransactions = computed(() => {
   // signTransferLeg) — le pointage ne concerne QUE le côté (source ou
   // destination) qui touche ce compte, l'autre côté reste indépendant.
   const transferRows = transfers.value
-    .map((t) => {
-      const leg = signTransferLeg(t, activeAccountId.value)
-      const dateCompta = leg.date
-      const otherAccountName = leg.isOutgoing ? t.toAccountName : t.fromAccountName
-
-      return {
-        id: `transfer-${t.id}`,
-        sourceId: t.id,
-        type: 'transfer',
-        dateCompta,
-        dateOperation: dateCompta,
-        dateValeur: '',
-        datePeriode: dateCompta,
-        label: `Virement ${leg.isOutgoing ? 'vers' : 'depuis'} ${otherAccountName}`,
-        reference: '',
-        meta: leg.isOutgoing ? 'Sortant' : 'Entrant',
-        amount: leg.amount,
-        isReconciled: leg.isOutgoing ? t.fromIsReconciled : t.toIsReconciled,
-        statementReference: leg.statement_reference,
-        isOutgoing: leg.isOutgoing,
-        raw: t,
-      }
-    })
+    .map(mapTransferRow)
     .filter((row) => (!start || row.datePeriode >= start) && (!end || row.datePeriode <= end))
 
   const currentStatementNumber = settings.statementNumber.trim()
@@ -616,7 +655,7 @@ const visibleTransactions = computed(() => {
           row.meta,
           row.reference,
           row.amount,
-          row.type,
+          getSearchableValue(row, 'type'),
           formatDate(row.dateCompta),
           formatDate(row.dateOperation),
           formatDate(row.dateValeur),
@@ -759,8 +798,10 @@ async function confirmDelete() {
   try {
     if (deleteTarget.value.type === 'achat') {
       await store.removePurchase(deleteTarget.value.sourceId)
-    } else {
+    } else if (deleteTarget.value.type === 'revenu') {
       await store.removeIncome(deleteTarget.value.sourceId)
+    } else {
+      await store.removeTransfer(deleteTarget.value.sourceId)
     }
 
     deleteTarget.value = null
@@ -768,6 +809,53 @@ async function confirmDelete() {
     deleteError.value = err instanceof Error ? err.message : 'Impossible de supprimer cette opération.'
   } finally {
     isDeleting.value = false
+  }
+}
+
+// Modifier une ligne depuis Pointage réutilise les mêmes fenêtres d'édition
+// complètes que les écrans Achats/Revenus (tous les champs restent
+// modifiables) — elles intègrent en plus la case « virement » qui n'a de
+// sens qu'en édition, voir PurchaseFormModal/IncomeFormModal.
+const editingPurchase = ref(null)
+const isPurchaseModalOpen = ref(false)
+const editingIncome = ref(null)
+const isIncomeModalOpen = ref(false)
+const editingTransfer = ref(null)
+const isTransferEditModalOpen = ref(false)
+
+function openEditRow(row) {
+  if (row.type === 'achat') {
+    editingPurchase.value = row.raw
+    isPurchaseModalOpen.value = true
+  } else if (row.type === 'revenu') {
+    editingIncome.value = row.raw
+    isIncomeModalOpen.value = true
+  } else {
+    editingTransfer.value = row.raw
+    isTransferEditModalOpen.value = true
+  }
+}
+
+const isUndoingId = ref(null)
+const undoError = ref('')
+
+// Un virement créé directement (pas via la case « virement » de Pointage,
+// ex: import CSV) n'a pas de ligne d'origine à restaurer — pas de bouton
+// Annuler dans ce cas, seule la suppression reste possible.
+function canUndoTransfer(row) {
+  return row.type === 'transfer' && Boolean(row.raw.originType) && Boolean(row.raw.originPayload)
+}
+
+async function undoTransfer(row) {
+  undoError.value = ''
+  isUndoingId.value = row.id
+
+  try {
+    await store.undoTransfer(row.raw)
+  } catch (err) {
+    undoError.value = err instanceof Error ? err.message : 'Impossible d’annuler ce virement.'
+  } finally {
+    isUndoingId.value = null
   }
 }
 </script>
@@ -781,6 +869,19 @@ async function confirmDelete() {
     >
     </PageHero>
 
+    <template v-if="!hasStatements">
+    <section class="panel reconciliation-card reconciliation-unavailable">
+      <p class="eyebrow">Pointage</p>
+      <h2>Ce compte n'a pas de relevés bancaires</h2>
+      <p class="reconciliation-unavailable-text">
+        « {{ activeAccount?.name }} » est déclaré sans notion de relevé — le pointage ne s'applique pas.
+        L'historique de ses virements et son solde sont visibles sur le Dashboard. Tu peux réactiver les
+        relevés pour ce compte depuis l'écran Comptes.
+      </p>
+    </section>
+    </template>
+
+    <template v-else>
     <section class="panel reconciliation-card">
       <div class="panel-header statement-panel-header">
         <div>
@@ -1128,6 +1229,8 @@ async function confirmDelete() {
         </div>
       </div>
 
+      <p v-if="undoError" class="form-error">{{ undoError }}</p>
+
       <div v-if="!visibleTransactions.length" class="empty-state-inline">
         {{ searchQuery ? 'Aucune opération ne correspond à ta recherche.' : 'Aucune opération sur cette période.' }}
       </div>
@@ -1217,8 +1320,9 @@ async function confirmDelete() {
               v-for="row in visibleTransactions"
               :key="row.id"
               :class="{ 'is-reconciled': row.isReconciled }"
+              @dblclick="openEditRow(row)"
             >
-              <td class="checkbox-col">
+              <td class="checkbox-col" @dblclick.stop>
                 <input
                   type="checkbox"
                   :checked="row.isReconciled"
@@ -1231,8 +1335,11 @@ async function confirmDelete() {
                 {{ formatDate(row.dateCompta) }}
               </td>
               <td v-if="isVisible('type')" :class="{ 'is-frozen': isFrozen('type') }" :style="columnStyle('type')">
-                <span class="import-type-badge" :class="row.type === 'achat' ? 'is-achat' : 'is-revenu'">
-                  {{ row.type === 'achat' ? 'Achat' : 'Revenu' }}
+                <span
+                  class="import-type-badge"
+                  :class="row.type === 'achat' ? 'is-achat' : row.type === 'revenu' ? 'is-revenu' : 'is-transfer'"
+                >
+                  {{ row.type === 'achat' ? 'Achat' : row.type === 'revenu' ? 'Revenu' : 'Virement' }}
                 </span>
               </td>
               <td
@@ -1269,7 +1376,38 @@ async function confirmDelete() {
               >
                 {{ row.amount >= 0 ? '+' : '' }}{{ formatCurrency(row.amount) }}
               </td>
-              <td class="actions-col">
+              <td class="actions-col" @dblclick.stop>
+                <button
+                  v-if="row.type === 'transfer'"
+                  class="transfer-indicator"
+                  type="button"
+                  title="Ce virement — cliquer pour modifier"
+                  aria-label="Modifier ce virement"
+                  @click="openEditRow(row)"
+                >
+                  🔀
+                </button>
+                <button
+                  v-else
+                  class="icon-btn"
+                  type="button"
+                  title="Modifier (ou marquer comme virement)"
+                  aria-label="Modifier cette opération"
+                  @click="openEditRow(row)"
+                >
+                  ✏️
+                </button>
+                <button
+                  v-if="canUndoTransfer(row)"
+                  class="icon-btn"
+                  type="button"
+                  title="Annuler ce virement et revenir à l'achat/revenu d'origine"
+                  aria-label="Annuler ce virement"
+                  :disabled="isUndoingId === row.id"
+                  @click="undoTransfer(row)"
+                >
+                  {{ isUndoingId === row.id ? '…' : '↩️' }}
+                </button>
                 <button
                   class="icon-btn icon-btn-danger"
                   type="button"
@@ -1286,6 +1424,7 @@ async function confirmDelete() {
       </div>
       </template>
     </section>
+    </template>
 
     <ConfirmModal
       :model-value="Boolean(deleteTarget)"
@@ -1308,6 +1447,10 @@ async function confirmDelete() {
       @update:model-value="deleteStatementTarget = null"
       @confirm="confirmDeleteStatement"
     />
+
+    <PurchaseFormModal v-model="isPurchaseModalOpen" :purchase="editingPurchase" />
+    <IncomeFormModal v-model="isIncomeModalOpen" :income="editingIncome" />
+    <TransferQuickAddModal v-model="isTransferEditModalOpen" :transfer="editingTransfer" />
   </main>
 </template>
 
@@ -1319,6 +1462,25 @@ async function confirmDelete() {
 
 .reconciliation-card {
   padding: 1.1rem;
+}
+
+.reconciliation-unavailable {
+  padding: 1.6rem 1.4rem;
+  text-align: center;
+}
+
+.reconciliation-unavailable h2 {
+  margin: 0.35rem 0 0.7rem;
+  color: var(--text, #eef1f3);
+  font-size: 1.2rem;
+}
+
+.reconciliation-unavailable-text {
+  margin: 0 auto;
+  max-width: 520px;
+  color: var(--text-soft, #b3bbc4);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .panel-header {
@@ -1678,6 +1840,11 @@ td.is-frozen {
   color: var(--positive-text, #bfe0c9);
 }
 
+.import-type-badge.is-transfer {
+  background: rgba(240, 169, 94, 0.16);
+  color: #f0a95e;
+}
+
 .amount-negative {
   color: var(--negative-text, #e1b4b4);
   font-weight: 600;
@@ -1706,6 +1873,34 @@ td.is-frozen {
   font-size: 0.78rem;
   line-height: 1;
   transition: background 140ms ease, border-color 140ms ease;
+}
+
+.transfer-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(240, 169, 94, 0.3);
+  border-radius: 8px;
+  background: rgba(240, 169, 94, 0.16);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.transfer-indicator:hover {
+  background: rgba(240, 169, 94, 0.26);
+}
+
+.transfer-indicator + .icon-btn,
+.icon-btn + .transfer-indicator {
+  margin-left: 0.4rem;
+}
+
+.icon-btn + .icon-btn {
+  margin-left: 0.4rem;
 }
 
 .icon-btn-danger {

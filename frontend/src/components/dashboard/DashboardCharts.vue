@@ -5,6 +5,7 @@ import { Chart as ChartJS, Title, Tooltip, Legend, ArcElement, PieController } f
 import { Pie } from 'vue-chartjs'
 import { usePurchasesStore } from '../../stores/purchases'
 import { formatCurrency } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 ChartJS.register(Title, Tooltip, Legend, ArcElement, PieController)
 
@@ -27,7 +28,7 @@ const CATEGORY_CHART_COLORS = [
 const MAX_VISIBLE_SLICES = 5
 
 const store = usePurchasesStore()
-const { purchases, incomes } = storeToRefs(store)
+const { purchases, incomes, transfers } = storeToRefs(store)
 
 
 function buildBreakdown(items, amountOf, keyOf) {
@@ -55,13 +56,34 @@ function isInSelectedYear(dateStr) {
 const yearPurchases = computed(() => purchases.value.filter((purchase) => isInSelectedYear(purchase.date)))
 const yearIncomes = computed(() => incomes.value.filter((income) => isInSelectedYear(income.income_date)))
 
-const categoryBreakdown = computed(() =>
-  buildBreakdown(yearPurchases.value, (purchase) => Number(purchase.amount || 0), (purchase) => purchase.category)
+// Un compte comme un Livret n'a jamais d'achat/revenu, seulement des
+// virements — sans ça, ses deux camemberts resteraient vides. Un virement
+// sortant rejoint la répartition "achats" sous le libellé « Virement », un
+// virement entrant la répartition "revenus" sous « Virement interne » (même
+// logique que les cartes du haut, voir DashboardView.vue).
+const yearTransferLegs = computed(() =>
+  transfers.value.map((t) => signTransferLeg(t, store.activeAccountId)).filter((leg) => isInSelectedYear(leg.date))
 )
 
-const sourceBreakdown = computed(() =>
-  buildBreakdown(yearIncomes.value, (income) => Number(income.amount || 0), (income) => income.source)
-)
+const categoryBreakdown = computed(() => {
+  const entries = [
+    ...yearPurchases.value.map((purchase) => ({ amount: Number(purchase.amount || 0), key: purchase.category })),
+    ...yearTransferLegs.value
+      .filter((leg) => leg.isOutgoing)
+      .map((leg) => ({ amount: Math.abs(leg.amount), key: 'Virement' })),
+  ]
+  return buildBreakdown(entries, (entry) => entry.amount, (entry) => entry.key)
+})
+
+const sourceBreakdown = computed(() => {
+  const entries = [
+    ...yearIncomes.value.map((income) => ({ amount: Number(income.amount || 0), key: income.source })),
+    ...yearTransferLegs.value
+      .filter((leg) => !leg.isOutgoing)
+      .map((leg) => ({ amount: leg.amount, key: 'Virement interne' })),
+  ]
+  return buildBreakdown(entries, (entry) => entry.amount, (entry) => entry.key)
+})
 
 const hasCategoryData = computed(() => categoryBreakdown.value.length > 0)
 const hasSourceData = computed(() => sourceBreakdown.value.length > 0)

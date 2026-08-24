@@ -90,7 +90,13 @@
 
         <label class="form-field">
           <span>Référence</span>
-          <input v-model.trim="form.reference" type="text" placeholder="Référence de l'opération" />
+          <input
+            v-model.trim="form.reference"
+            type="text"
+            placeholder="Référence de l'opération"
+            readonly
+            title="Référence bancaire — non modifiable (sert à détecter les doublons à l'import)"
+          />
         </label>
 
         <label class="form-field">
@@ -138,6 +144,23 @@
           <input v-model.trim="form.statementReference" type="text" placeholder="Ex: 2026-01" />
         </label>
 
+        <div v-if="isEditMode" class="form-field form-field-full transfer-section">
+          <label class="transfer-toggle">
+            <input v-model="isTransfer" type="checkbox" />
+            <span>C'est en réalité un virement vers un autre compte</span>
+          </label>
+
+          <label v-if="isTransfer" class="form-field transfer-account-field">
+            <span>Compte destination</span>
+            <select v-model.number="transferAccountId">
+              <option :value="null">Choisir un compte</option>
+              <option v-for="account in otherAccountsList" :key="account.id" :value="account.id">
+                {{ account.name }}
+              </option>
+            </select>
+          </label>
+        </div>
+
         <p v-if="submitError" class="form-error">
           {{ submitError }}
         </p>
@@ -146,13 +169,19 @@
           <button class="ghost-btn" type="button" @click="closeModal" :disabled="isSubmitting">
             Annuler
           </button>
-          <button class="primary-btn" type="submit" :disabled="isSubmitting">
+          <button
+            class="primary-btn"
+            type="submit"
+            :disabled="isSubmitting || (isTransfer && !transferAccountId)"
+          >
             {{
               isSubmitting
                 ? 'Enregistrement...'
-                : isEditMode
-                  ? 'Enregistrer les modifications'
-                  : "Ajouter l'achat"
+                : isTransfer
+                  ? 'Transférer'
+                  : isEditMode
+                    ? 'Enregistrer les modifications'
+                    : "Ajouter l'achat"
             }}
           </button>
         </div>
@@ -219,6 +248,13 @@ const subCategoryModalError = ref('')
 
 const isEditMode = computed(() => Boolean(props.purchase?.id))
 
+const isTransfer = ref(false)
+const transferAccountId = ref(null)
+
+const otherAccountsList = computed(() =>
+  accountsList.value.filter((account) => Number(account.id) !== Number(form.accountId))
+)
+
 const availableCategories = computed(() => {
   return (storeRefs.categoriesList?.value ?? storeRefs.categories?.value ?? []).filter(
     (category) => (category.type || 'achat') === 'achat'
@@ -263,6 +299,8 @@ watch(
       isSubCategoryModalOpen.value = false
       categoryModalError.value = ''
       subCategoryModalError.value = ''
+      isTransfer.value = false
+      transferAccountId.value = null
     }
   },
   { deep: true, immediate: true }
@@ -360,7 +398,33 @@ async function submitForm() {
       statementReference: form.isReconciled ? form.statementReference : '',
     }
 
-    if (isEditMode.value) {
+    if (isEditMode.value && isTransfer.value && transferAccountId.value) {
+      // Un achat sort toujours de son propre compte (débit) vers le compte
+      // choisi (crédit) — copie de la ligne (avec ses modifications) gardée
+      // dans origin_payload pour pouvoir annuler le virement plus tard (voir
+      // store.undoTransfer) et pour l'affichage dans Pointage (catégorie/
+      // référence/dates), le nom de catégorie n'étant pas dans le payload API.
+      const categoryName = availableCategories.value.find(
+        (category) => Number(category.id) === Number(payload.categoryId)
+      )?.name || ''
+
+      await store.createTransfer({
+        fromAccountId: payload.accountId,
+        toAccountId: transferAccountId.value,
+        amount: payload.amount,
+        date: payload.date,
+        note: payload.merchant,
+        fromIsReconciled: payload.isReconciled,
+        fromStatementReference: payload.statementReference,
+        toIsReconciled: false,
+        toStatementReference: '',
+        originType: 'achat',
+        originPayload: JSON.stringify({ ...payload, category: categoryName }),
+      })
+
+      await store.removePurchase(props.purchase.id)
+      emit('saved', { type: 'transfer', merchant: payload.merchant })
+    } else if (isEditMode.value) {
       await store.editPurchase(props.purchase.id, payload)
       emit('saved', { type: 'edit', merchant: payload.merchant })
     } else {

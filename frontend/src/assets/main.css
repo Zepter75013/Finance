@@ -606,6 +606,16 @@ button {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
+.form-field input:read-only {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.form-field input:read-only:focus {
+  border-color: var(--line);
+  box-shadow: none;
+}
+
 .form-field-full {
   grid-column: 1 / -1;
 }
@@ -627,6 +637,33 @@ button {
   height: 18px;
   accent-color: var(--accent, #728998);
   cursor: pointer;
+}
+
+.transfer-section {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.transfer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.transfer-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent, #728998);
+  cursor: pointer;
+}
+
+.transfer-account-field {
+  margin-top: 12px;
 }
 
 .modal-actions {

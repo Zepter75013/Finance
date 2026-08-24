@@ -1706,8 +1706,8 @@ async function confirmImport() {
 }
 
 .import-type-badge.is-transfer {
-  background: rgba(92, 200, 209, 0.14);
-  color: #5cc8d1;
+  background: rgba(240, 169, 94, 0.16);
+  color: #f0a95e;
 }
 
 .import-transfer-toggle {

@@ -6,9 +6,12 @@ import PageHero from '../Common/PageHero.vue'
 import CircularProgress from '../Common/CircularProgress.vue'
 import DashboardCharts from './DashboardCharts.vue'
 import CategorySubTrendGrid from './CategorySubTrendGrid.vue'
+import TransferTrendChart from './TransferTrendChart.vue'
+import TransferHistoryList from './TransferHistoryList.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { useRecurringStore } from '../../stores/recurring'
 import { formatCurrency, formatDate } from '../../utils/format'
+import { signTransferLeg } from '../../utils/realBalance'
 
 const emit = defineEmits(['open-recurring'])
 
@@ -16,6 +19,7 @@ const store = usePurchasesStore()
 const {
   purchases,
   incomes,
+  transfers,
   currentMonthBudgetRemaining,
   currentMonthExpenseBudget,
   currentMonthExpenseSpent,
@@ -149,13 +153,58 @@ function goToNextYear() {
 const yearPurchases = computed(() => purchases.value.filter((p) => yearOf(p.date) === selectedYear.value))
 const yearIncomes = computed(() => incomes.value.filter((i) => yearOf(i.income_date) === selectedYear.value))
 
-const yearExpenseTotal = computed(() =>
-  yearPurchases.value.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+// Un compte comme un Livret n'a jamais d'achat/revenu, seulement des
+// virements — sans ça, ses cartes et graphiques resteraient vides. Un
+// virement sortant compte comme une dépense, un virement entrant comme un
+// revenu (voir aussi DashboardCharts, même logique pour les graphiques).
+const yearTransferLegs = computed(() =>
+  transfers.value
+    .map((t) => signTransferLeg(t, store.activeAccountId))
+    .filter((leg) => yearOf(leg.date) === selectedYear.value)
 )
-const yearIncomeTotal = computed(() =>
-  yearIncomes.value.reduce((sum, i) => sum + Number(i.amount || 0), 0)
-)
+
+const yearExpenseTotal = computed(() => {
+  const purchasesTotal = yearPurchases.value.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const outgoingTransfersTotal = yearTransferLegs.value
+    .filter((leg) => leg.isOutgoing)
+    .reduce((sum, leg) => sum + Math.abs(leg.amount), 0)
+  return purchasesTotal + outgoingTransfersTotal
+})
+const yearIncomeTotal = computed(() => {
+  const incomesTotal = yearIncomes.value.reduce((sum, i) => sum + Number(i.amount || 0), 0)
+  const incomingTransfersTotal = yearTransferLegs.value
+    .filter((leg) => !leg.isOutgoing)
+    .reduce((sum, leg) => sum + leg.amount, 0)
+  return incomesTotal + incomingTransfersTotal
+})
 const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.value)
+
+// Un compte sans notion de relevé (ex: Livret) n'a ni budget, ni achats/
+// revenus catégorisables, ni vraiment de raison de découper par année — un
+// Livret vit sur quelques virements espacés, pas un rythme mensuel/annuel à
+// suivre. Le Dashboard bascule alors sur une version réduite : crédit/débit
+// cumulés depuis toujours (pas d'année sélectionnée), pas de carte budget,
+// pas de graphiques par catégorie (un seul "poste" — Virement — n'a rien à
+// répartir).
+const isSimplifiedDashboard = computed(() => activeAccount.value?.hasStatements === false)
+
+const allTimeTransferLegs = computed(() =>
+  transfers.value.map((t) => signTransferLeg(t, store.activeAccountId))
+)
+
+const allTimeDebitTotal = computed(() =>
+  allTimeTransferLegs.value
+    .filter((leg) => leg.isOutgoing)
+    .reduce((sum, leg) => sum + Math.abs(leg.amount), 0)
+)
+
+const allTimeCreditTotal = computed(() =>
+  allTimeTransferLegs.value
+    .filter((leg) => !leg.isOutgoing)
+    .reduce((sum, leg) => sum + leg.amount, 0)
+)
+
+const allTimeNetBalance = computed(() => allTimeCreditTotal.value - allTimeDebitTotal.value)
 
 </script>
 
@@ -164,7 +213,11 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
     <PageHero
       eyebrow="Vue d’ensemble"
       title="Dashboard"
-      description="Un coup d’œil sur tes finances : dépenses, revenus, solde et budget."
+      :description="
+        isSimplifiedDashboard
+          ? 'Un coup d’œil sur ce compte : virements reçus, envoyés et solde.'
+          : 'Un coup d’œil sur tes finances : dépenses, revenus, solde et budget.'
+      "
     >
       <template #actions>
         <div v-if="accountsList.length > 1" class="account-switcher">
@@ -175,7 +228,7 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
           </select>
         </div>
 
-        <div class="year-switcher">
+        <div v-if="!isSimplifiedDashboard" class="year-switcher">
           <button
             class="ghost-btn year-switcher-btn"
             type="button"
@@ -214,17 +267,37 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
       <button class="ghost-btn" type="button" @click="dismissRecurringAlert">Masquer</button>
     </div>
 
-    <section class="dashboard-stats-grid">
+    <section v-if="isSimplifiedDashboard" class="dashboard-stats-grid">
+      <article class="panel stat-card">
+        <span>Débit</span>
+        <strong>{{ formatCurrency(allTimeDebitTotal) }}</strong>
+        <p>Total des virements sortants</p>
+      </article>
+
+      <article class="panel stat-card accent-soft">
+        <span>Crédit</span>
+        <strong>{{ formatCurrency(allTimeCreditTotal) }}</strong>
+        <p>Total des virements reçus</p>
+      </article>
+
+      <article class="panel stat-card">
+        <span>Solde net</span>
+        <strong>{{ formatCurrency(allTimeNetBalance) }}</strong>
+        <p>{{ allTimeNetBalance >= 0 ? 'Solde positif' : 'Solde négatif' }}</p>
+      </article>
+    </section>
+
+    <section v-else class="dashboard-stats-grid">
       <article class="panel stat-card">
         <span>Dépenses ({{ selectedYear }})</span>
         <strong>{{ formatCurrency(yearExpenseTotal) }}</strong>
-        <p>Total des achats de l’année</p>
+        <p>Achats et virements sortants de l’année</p>
       </article>
 
       <article class="panel stat-card accent-soft">
         <span>Revenus ({{ selectedYear }})</span>
         <strong>{{ formatCurrency(yearIncomeTotal) }}</strong>
-        <p>Total des revenus de l’année</p>
+        <p>Revenus et virements reçus de l’année</p>
       </article>
 
       <article class="panel stat-card">
@@ -234,8 +307,8 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
       </article>
     </section>
 
-    <section class="dashboard-current-grid">
-      <article class="panel stat-card accent-line stat-card-ring">
+    <section class="dashboard-current-grid" :class="{ 'dashboard-current-grid-single': isSimplifiedDashboard }">
+      <article v-if="!isSimplifiedDashboard" class="panel stat-card accent-line stat-card-ring">
         <CircularProgress
           :percent="budgetUsedPercent"
           :size="76"
@@ -266,8 +339,15 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
       </article>
     </section>
 
-    <DashboardCharts :selected-year="selectedYear" />
-    <CategorySubTrendGrid :selected-year="selectedYear" />
+    <template v-if="isSimplifiedDashboard">
+      <TransferTrendChart />
+      <TransferHistoryList />
+    </template>
+
+    <template v-else>
+      <DashboardCharts :selected-year="selectedYear" />
+      <CategorySubTrendGrid :selected-year="selectedYear" />
+    </template>
   </main>
 </template>
 
@@ -309,6 +389,10 @@ const yearNetBalance = computed(() => yearIncomeTotal.value - yearExpenseTotal.v
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
+}
+
+.dashboard-current-grid-single {
+  grid-template-columns: 1fr;
 }
 
 .stat-card-ring {

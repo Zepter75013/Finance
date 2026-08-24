@@ -200,6 +200,56 @@ func (h *Handler) ClearOpeningBalance(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(updated)
 }
 
+// accountIDFromHasStatementsPath extrait l'id depuis /accounts/{id}/has-statements.
+func accountIDFromHasStatementsPath(path string) (uint64, error) {
+	trimmed := strings.TrimPrefix(path, "/accounts/")
+	trimmed = strings.TrimSuffix(trimmed, "/has-statements")
+	trimmed = strings.Trim(trimmed, "/")
+
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return 0, strconv.ErrSyntax
+	}
+
+	return strconv.ParseUint(trimmed, 10, 64)
+}
+
+func (h *Handler) UpdateHasStatements(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := accountIDFromHasStatementsPath(r.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid account id", http.StatusBadRequest)
+		return
+	}
+
+	var payload struct {
+		HasStatements bool `json:"has_statements"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.repo.SetHasStatements(r.Context(), id, payload.HasStatements)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "failed to update has_statements", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(updated)
+}
+
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)

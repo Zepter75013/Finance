@@ -7,7 +7,6 @@ import QuickCreateModal from '../Common/QuickCreateModal.vue'
 import ConfirmModal from '../Common/ConfirmModal.vue'
 import CopyCategoriesModal from './CopyCategoriesModal.vue'
 import AccountOpeningBalanceModal from './AccountOpeningBalanceModal.vue'
-import TransferFormModal from '../transfers/TransferFormModal.vue'
 import { usePurchasesStore } from '../../stores/purchases'
 import { formatCurrency } from '../../utils/format'
 
@@ -40,16 +39,26 @@ function handleCopyCategories(account) {
   isCopyModalOpen.value = true
 }
 
-function handleCategoriesCopied() {
-  store.loadAccounts()
+const isTogglingStatementsId = ref(null)
+const statementsToggleError = ref('')
+
+// Un compte sans notion de relevé (ex: Livret, alimenté uniquement par
+// virement) désactive l'écran Pointage pour lui — voir ReconciliationView.
+async function toggleHasStatements(account) {
+  statementsToggleError.value = ''
+  isTogglingStatementsId.value = account.id
+
+  try {
+    await store.setAccountHasStatements(account.id, !account.hasStatements)
+  } catch (err) {
+    statementsToggleError.value = err instanceof Error ? err.message : 'Impossible de modifier ce réglage.'
+  } finally {
+    isTogglingStatementsId.value = null
+  }
 }
 
-const transferSourceAccountId = ref(null)
-const isTransferModalOpen = ref(false)
-
-function handleTransfer(account) {
-  transferSourceAccountId.value = account.id
-  isTransferModalOpen.value = true
+function handleCategoriesCopied() {
+  store.loadAccounts()
 }
 
 const openingBalanceTarget = ref(null)
@@ -143,6 +152,7 @@ async function confirmDelete() {
     </PageHero>
 
     <p v-if="deleteError" class="form-error">{{ deleteError }}</p>
+    <p v-if="statementsToggleError" class="form-error">{{ statementsToggleError }}</p>
 
     <section v-if="!accountCards.length" class="panel empty-state">
       <div class="empty-state-icon">€</div>
@@ -167,13 +177,28 @@ async function confirmDelete() {
             <span class="row-icon" aria-hidden="true">€</span>
             <div class="account-row-info">
               <h3>{{ account.name }}</h3>
-              <p class="account-row-meta">
+              <p v-if="account.hasStatements" class="account-row-meta">
                 {{ account.purchaseCount }} achat{{ account.purchaseCount > 1 ? 's' : '' }}
                 ({{ formatCurrency(account.totalExpense) }}) ·
                 {{ account.incomeCount }} revenu{{ account.incomeCount > 1 ? 's' : '' }}
                 ({{ formatCurrency(account.totalIncome) }}) ·
                 {{ account.categoryCount }} catégorie{{ account.categoryCount > 1 ? 's' : '' }}
               </p>
+              <p v-else class="account-row-meta">
+                {{ account.transferCount }} virement{{ account.transferCount > 1 ? 's' : '' }}
+              </p>
+              <label
+                class="account-statements-toggle"
+                :title="account.hasStatements ? 'Décoche si ce compte n\'a jamais de relevé bancaire (ex: Livret)' : 'Coche si ce compte reçoit des relevés bancaires'"
+              >
+                <input
+                  type="checkbox"
+                  :checked="account.hasStatements"
+                  :disabled="isTogglingStatementsId === account.id"
+                  @change="toggleHasStatements(account)"
+                />
+                <span>A des relevés bancaires (Pointage disponible)</span>
+              </label>
             </div>
           </div>
 
@@ -186,9 +211,6 @@ async function confirmDelete() {
             </button>
             <button class="ghost-btn" type="button" @click="handleOpeningBalance(account)">
               Solde initial
-            </button>
-            <button class="ghost-btn" type="button" @click="handleTransfer(account)">
-              Transférer
             </button>
             <button
               class="ghost-btn ghost-btn-danger"
@@ -237,11 +259,6 @@ async function confirmDelete() {
     <AccountOpeningBalanceModal
       v-model="isOpeningBalanceModalOpen"
       :account="openingBalanceTarget"
-    />
-
-    <TransferFormModal
-      v-model="isTransferModalOpen"
-      :default-from-account-id="transferSourceAccountId"
     />
   </main>
 </template>
@@ -312,6 +329,20 @@ async function confirmDelete() {
   margin: 0.15rem 0 0;
   color: var(--text-soft, #b3bbc4);
   font-size: 0.8rem;
+}
+
+.account-statements-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+  color: var(--text-dim, #8a939d);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.account-statements-toggle input {
+  cursor: pointer;
 }
 
 .account-row-actions {

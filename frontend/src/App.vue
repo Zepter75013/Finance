@@ -14,7 +14,6 @@ import DashboardView from './components/dashboard/DashboardView.vue'
 import ConsolidatedView from './components/consolidated/ConsolidatedView.vue'
 import MonthlyOverviewView from './components/dashboard/MonthlyOverviewView.vue'
 import RecurringView from './components/recurring/RecurringView.vue'
-import TransfersView from './components/transfers/TransfersView.vue'
 import PurchasesView from './components/dashboard/PurchasesView.vue'
 import PurchaseFormModal from './components/dashboard/PurchaseFormModal.vue'
 import DeletePurchaseModal from './components/dashboard/DeletePurchaseModal.vue'
@@ -72,7 +71,35 @@ const {
   error,
   selectedPurchaseId,
   activeCategory,
+  activeAccount,
 } = storeToRefs(purchasesStore)
+
+// Un compte sans notion de relevé (ex: Livret) n'a ni achats/revenus, ni
+// budget, ni récurrences, ni pointage — ces entrées du menu disparaissent
+// pour ne pas pointer vers des écrans qui n'ont rien à montrer pour lui.
+const isSimplifiedNav = computed(() => activeAccount.value?.hasStatements === false)
+
+// Si le compte actif bascule vers un compte sans relevé pendant qu'on est
+// sur un écran désormais masqué du menu (ex: on consultait "Achats" puis on
+// change de compte via un sélecteur ailleurs dans l'app), on ne laisse pas
+// cet écran orphelin — retour au Dashboard, qui reste toujours pertinent.
+const SIMPLIFIED_NAV_HIDDEN_VIEWS = new Set([
+  'monthly',
+  'purchases',
+  'incomes',
+  'budgets',
+  'recurring',
+  'reconciliation',
+  'categories',
+  'import',
+  'import-categories',
+])
+
+watch(isSimplifiedNav, (simplified) => {
+  if (simplified && SIMPLIFIED_NAV_HIDDEN_VIEWS.has(activeView.value)) {
+    activeView.value = 'dashboard'
+  }
+})
 
 const editingPurchase = computed(() => {
   if (!editingPurchaseId.value) {
@@ -479,6 +506,7 @@ function handleBulkDeleted(result) {
       :active-view="activeView"
       :username="username"
       :avatar-url="avatarUrl"
+      :is-simplified-nav="isSimplifiedNav"
       @navigate="navigateTo"
       @logout="handleLogout"
       @change-password="isChangePasswordModalOpen = true"
@@ -552,8 +580,6 @@ function handleBulkDeleted(result) {
         <MonthlyOverviewView v-else-if="activeView === 'monthly'" />
 
         <RecurringView v-else-if="activeView === 'recurring'" />
-
-        <TransfersView v-else-if="activeView === 'transfers'" />
 
         <template v-else>
           <section

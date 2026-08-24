@@ -18,8 +18,15 @@ type Transfer struct {
 	FromStatementReference string    `json:"from_statement_reference"`
 	ToIsReconciled         bool      `json:"to_is_reconciled"`
 	ToStatementReference   string    `json:"to_statement_reference"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	// Copie de la ligne achat/revenu d'origine quand ce virement provient
+	// d'une conversion depuis l'écran Pointage (OriginType "achat"/"revenu",
+	// OriginPayload le JSON de la ligne mappée) — permet de recréer
+	// exactement cette ligne si l'utilisateur annule le virement. Nil pour
+	// un virement créé directement (aucune ligne d'origine à restaurer).
+	OriginType    *string   `json:"origin_type"`
+	OriginPayload *string   `json:"origin_payload"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type TransferInput struct {
@@ -32,4 +39,6 @@ type TransferInput struct {
 	FromStatementReference string  `json:"from_statement_reference"`
 	ToIsReconciled         bool    `json:"to_is_reconciled"`
 	ToStatementReference   string  `json:"to_statement_reference"`
+	OriginType             *string `json:"origin_type"`
+	OriginPayload          *string `json:"origin_payload"`
 }

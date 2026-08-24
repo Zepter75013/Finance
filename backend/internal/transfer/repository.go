@@ -25,6 +25,8 @@ const selectColumns = `
 	from_statement_reference,
 	to_is_reconciled,
 	to_statement_reference,
+	origin_type,
+	origin_payload,
 	created_at,
 	updated_at
 `
@@ -33,6 +35,7 @@ func scanTransfer(scanner interface {
 	Scan(dest ...any) error
 }) (Transfer, error) {
 	var t Transfer
+	var originType, originPayload sql.NullString
 
 	err := scanner.Scan(
 		&t.ID,
@@ -45,11 +48,20 @@ func scanTransfer(scanner interface {
 		&t.FromStatementReference,
 		&t.ToIsReconciled,
 		&t.ToStatementReference,
+		&originType,
+		&originPayload,
 		&t.CreatedAt,
 		&t.UpdatedAt,
 	)
 	if err != nil {
 		return Transfer{}, err
+	}
+
+	if originType.Valid {
+		t.OriginType = &originType.String
+	}
+	if originPayload.Valid {
+		t.OriginPayload = &originPayload.String
 	}
 
 	return t, nil
@@ -99,13 +111,15 @@ func (r *Repository) Create(ctx context.Context, input TransferInput) (Transfer,
 	insertQuery := `
 		INSERT INTO transfers (
 			from_account_id, to_account_id, amount, transfer_date, note,
-			from_is_reconciled, from_statement_reference, to_is_reconciled, to_statement_reference
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			from_is_reconciled, from_statement_reference, to_is_reconciled, to_statement_reference,
+			origin_type, origin_payload
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := r.db.ExecContext(ctx, insertQuery,
 		input.FromAccountID, input.ToAccountID, input.Amount, transferDate, input.Note,
 		input.FromIsReconciled, input.FromStatementReference, input.ToIsReconciled, input.ToStatementReference,
+		input.OriginType, input.OriginPayload,
 	)
 	if err != nil {
 		return Transfer{}, err
@@ -130,6 +144,7 @@ func (r *Repository) Update(ctx context.Context, id uint64, input TransferInput)
 		SET
 			from_account_id = ?, to_account_id = ?, amount = ?, transfer_date = ?, note = ?,
 			from_is_reconciled = ?, from_statement_reference = ?, to_is_reconciled = ?, to_statement_reference = ?,
+			origin_type = ?, origin_payload = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
@@ -137,6 +152,7 @@ func (r *Repository) Update(ctx context.Context, id uint64, input TransferInput)
 	result, err := r.db.ExecContext(ctx, updateQuery,
 		input.FromAccountID, input.ToAccountID, input.Amount, transferDate, input.Note,
 		input.FromIsReconciled, input.FromStatementReference, input.ToIsReconciled, input.ToStatementReference,
+		input.OriginType, input.OriginPayload,
 		id,
 	)
 	if err != nil {

@@ -26,13 +26,6 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-const selectColumns = `
-	id,
-	name,
-	opening_balance_amount,
-	opening_balance_date
-`
-
 // Les compteurs (achats, revenus, catégories) permettent au frontend
 // d'afficher l'utilisation de chaque compte et de désactiver la suppression
 // sans devoir charger en mémoire les achats/revenus de tous les comptes — ces
@@ -42,6 +35,7 @@ const selectColumnsWithStats = `
 	a.name,
 	a.opening_balance_amount,
 	a.opening_balance_date,
+	a.has_statements,
 	(SELECT COUNT(*) FROM purchases p WHERE p.account_id = a.id) AS purchase_count,
 	(SELECT COUNT(*) FROM incomes i WHERE i.account_id = a.id) AS income_count,
 	(SELECT COALESCE(SUM(p2.amount), 0) FROM purchases p2 WHERE p2.account_id = a.id) AS total_expense,
@@ -101,6 +95,7 @@ func (r *Repository) List(ctx context.Context, userID uint64) ([]Account, error)
 			&a.Name,
 			&openingAmount,
 			&openingDate,
+			&a.HasStatements,
 			&a.PurchaseCount,
 			&a.IncomeCount,
 			&a.TotalExpense,
@@ -146,7 +141,7 @@ func (r *Repository) Create(ctx context.Context, name string) (Account, error) {
 		VALUES (?)
 	`
 
-	account := Account{Name: strings.TrimSpace(name)}
+	account := Account{Name: strings.TrimSpace(name), HasStatements: true}
 
 	result, err := r.db.ExecContext(ctx, query, account.Name)
 	if err != nil {
@@ -219,16 +214,14 @@ func (r *Repository) ClearOpeningBalance(ctx context.Context, id uint64) (Accoun
 	return r.FindByID(ctx, id)
 }
 
-func (r *Repository) Update(ctx context.Context, id uint64, name string) (Account, error) {
-	query := `
-		UPDATE accounts
-		SET name = ?
-		WHERE id = ?
-	`
-
-	account := Account{ID: id, Name: strings.TrimSpace(name)}
-
-	result, err := r.db.ExecContext(ctx, query, account.Name, account.ID)
+// SetHasStatements active/désactive la notion de relevé bancaire pour ce
+// compte — désactivée, l'écran Pointage n'a plus d'utilité pour ce compte
+// (ex: Livret, qui n'a structurellement jamais de relevé).
+func (r *Repository) SetHasStatements(ctx context.Context, id uint64, hasStatements bool) (Account, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE accounts SET has_statements = ? WHERE id = ?`,
+		hasStatements, id,
+	)
 	if err != nil {
 		return Account{}, err
 	}
@@ -244,21 +237,69 @@ func (r *Repository) Update(ctx context.Context, id uint64, name string) (Accoun
 		}
 	}
 
-	return account, nil
+	return r.FindByID(ctx, id)
 }
 
+func (r *Repository) Update(ctx context.Context, id uint64, name string) (Account, error) {
+	query := `
+		UPDATE accounts
+		SET name = ?
+		WHERE id = ?
+	`
+
+	trimmedName := strings.TrimSpace(name)
+
+	result, err := r.db.ExecContext(ctx, query, trimmedName, id)
+	if err != nil {
+		return Account{}, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Account{}, err
+	}
+
+	if rowsAffected == 0 {
+		if _, err := r.FindByID(ctx, id); err != nil {
+			return Account{}, sql.ErrNoRows
+		}
+	}
+
+	// Re-charge la ligne complète plutôt que de renvoyer un Account partiel
+	// (id/name seulement) — sinon solde initial, has_statements, etc.
+	// seraient effacés côté client au prochain remplacement de la liste.
+	return r.FindByID(ctx, id)
+}
+
+// FindByID utilise selectColumnsWithStats (comme List) et non selectColumns
+// — un appelant après mutation (SetOpeningBalance, SetHasStatements, Update…)
+// remplace tout l'objet Account côté frontend avec ce résultat ; sans les
+// compteurs, achats/revenus/catégories/virements retombaient à zéro dans
+// l'UI jusqu'au prochain rechargement complet de la page.
 func (r *Repository) FindByID(ctx context.Context, id uint64) (Account, error) {
 	query := `
-		SELECT ` + selectColumns + `
-		FROM accounts
-		WHERE id = ?
+		SELECT ` + selectColumnsWithStats + `
+		FROM accounts a
+		WHERE a.id = ?
 	`
 
 	var a Account
 	var openingAmount sql.NullFloat64
 	var openingDate sql.NullTime
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&a.ID, &a.Name, &openingAmount, &openingDate)
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&a.ID,
+		&a.Name,
+		&openingAmount,
+		&openingDate,
+		&a.HasStatements,
+		&a.PurchaseCount,
+		&a.IncomeCount,
+		&a.TotalExpense,
+		&a.TotalIncome,
+		&a.CategoryCount,
+		&a.TransferCount,
+	)
 	if err != nil {
 		return Account{}, err
 	}
