@@ -66,7 +66,17 @@ const transferLegs = computed(() => {
   return transfers.value
     .map((t) => {
       const leg = signTransferLeg(t, store.activeAccountId)
-      return { ...leg, otherAccountName: leg.isOutgoing ? t.toAccountName : t.fromAccountName }
+      return {
+        ...leg,
+        otherAccountName: leg.isOutgoing ? t.toAccountName : t.fromAccountName,
+        // jsPDF (polices standard, sans les 14 fonts) ne sait pas rendre
+        // U+2192 « → » — le glyphe manquant casse aussi le calcul de largeur
+        // de toute la cellule (lettres étirées sur toute la ligne). D'où un
+        // séparateur ASCII ici, réservé au PDF (l'affichage à l'écran
+        // ailleurs dans l'app utilise « → » sans souci, rendu par le
+        // navigateur).
+        pairLabel: `${t.fromAccountName} -> ${t.toAccountName}`,
+      }
     })
     .filter((leg) => !sinceDate || leg.date >= sinceDate)
 })
@@ -91,6 +101,7 @@ const debitItems = computed(() => {
       amount: Math.abs(leg.amount),
       merchant: leg.otherAccountName,
       category: leg.otherAccountName,
+      accountPair: leg.pairLabel,
       subCategory: '',
       note: '',
     }))
@@ -118,6 +129,7 @@ const creditItems = computed(() => {
       amount: leg.amount,
       source: leg.otherAccountName,
       category: leg.otherAccountName,
+      accountPair: leg.pairLabel,
       subCategory: '',
       note: '',
       operationLabel: '',
@@ -428,6 +440,7 @@ const reportTransactions = computed(() => {
       date: purchase.date,
       type: isSimplified.value ? 'Débit' : 'Achat',
       categoryOrSource: purchase.category || '—',
+      accountPair: purchase.accountPair || purchase.category || '—',
       subCategory: purchase.subCategory || '—',
       label: purchase.merchant || purchase.note || '—',
       amount: -Number(purchase.amount || 0),
@@ -439,6 +452,7 @@ const reportTransactions = computed(() => {
       date: income.income_date,
       type: isSimplified.value ? 'Crédit' : 'Revenu',
       categoryOrSource: income.source || income.category || '—',
+      accountPair: income.accountPair || income.source || income.category || '—',
       subCategory: income.subCategory || '—',
       label: income.note || income.operationLabel || '—',
       amount: Number(income.amount || 0),
@@ -822,7 +836,7 @@ async function generateReport() {
         : [['Date', 'Type', 'Catégorie / Source', 'Sous-catégorie', 'Libellé', 'Montant']],
       body: reportTransactions.value.map((row) =>
         isSimplified.value
-          ? [formatTableDate(row.date), row.type, row.categoryOrSource, row.label, formatCurrencyForPdf(row.amount)]
+          ? [formatTableDate(row.date), row.type, row.accountPair, row.label, formatCurrencyForPdf(row.amount)]
           : [
               formatTableDate(row.date),
               row.type,

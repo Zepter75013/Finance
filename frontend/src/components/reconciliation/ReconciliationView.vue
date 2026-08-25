@@ -532,7 +532,6 @@ function parseOriginPayload(t) {
 function mapTransferRow(t) {
   const leg = signTransferLeg(t, activeAccountId.value)
   const dateCompta = leg.date
-  const otherAccountName = leg.isOutgoing ? t.toAccountName : t.fromAccountName
   const origin = parseOriginPayload(t)
 
   return {
@@ -543,7 +542,7 @@ function mapTransferRow(t) {
     dateOperation: origin?.operationDate || dateCompta,
     dateValeur: origin?.valueDate || '',
     datePeriode: dateCompta,
-    label: `Virement ${leg.isOutgoing ? 'vers' : 'depuis'} ${otherAccountName}`,
+    label: `${t.fromAccountName} → ${t.toAccountName}`,
     reference: origin?.reference || '',
     meta: origin?.category || (leg.isOutgoing ? 'Sortant' : 'Entrant'),
     amount: leg.amount,

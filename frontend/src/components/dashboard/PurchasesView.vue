@@ -49,7 +49,7 @@ const outgoingTransferItems = computed(() =>
       return {
         id: `transfer-${t.id}`,
         date: leg.date,
-        merchant: `Virement vers ${t.toAccountName}`,
+        merchant: `${t.fromAccountName} → ${t.toAccountName}`,
         category: origin?.category || 'Virement',
         subCategory: '',
         paymentMethod: '',

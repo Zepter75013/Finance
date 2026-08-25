@@ -9,7 +9,16 @@ export const useThemeStore = defineStore('theme', () => {
   // seulement une variante "mode sombre" parmi d'autres) — nouveau réglage
   // par défaut tant que l'utilisateur n'a pas fait de choix explicite,
   // plutôt que de dépendre de la préférence claire/sombre du système.
-  const storedTheme = localStorage.getItem(STORAGE_KEY)
+  // localStorage peut lever (navigation privée Safari, cookies/stockage
+  // bloqués) — un thème non lisible/enregistrable ne doit pas empêcher
+  // l'app de démarrer, juste retomber sur le défaut à chaque session.
+  let storedTheme = null
+  try {
+    storedTheme = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    storedTheme = null
+  }
+
   const theme = ref(VALID_THEMES.includes(storedTheme) ? storedTheme : 'dark')
 
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
@@ -32,7 +41,13 @@ export const useThemeStore = defineStore('theme', () => {
   function setTheme(value) {
     if (!VALID_THEMES.includes(value)) return
     theme.value = value
-    localStorage.setItem(STORAGE_KEY, value)
+
+    try {
+      localStorage.setItem(STORAGE_KEY, value)
+    } catch {
+      // Stockage indisponible (navigation privée, quota…) — le thème reste
+      // actif pour la session en cours mais ne survivra pas à un rechargement.
+    }
   }
 
   watch(resolvedTheme, applyTheme, { immediate: true })

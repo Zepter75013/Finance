@@ -50,15 +50,21 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const dateFormatStyle = ref(stored.dateFormatStyle)
 
   watch([currencyCode, currencyPosition, numberFormatStyle, dateFormatStyle], () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        currencyCode: currencyCode.value,
-        currencyPosition: currencyPosition.value,
-        numberFormatStyle: numberFormatStyle.value,
-        dateFormatStyle: dateFormatStyle.value,
-      })
-    )
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          currencyCode: currencyCode.value,
+          currencyPosition: currencyPosition.value,
+          numberFormatStyle: numberFormatStyle.value,
+          dateFormatStyle: dateFormatStyle.value,
+        })
+      )
+    } catch {
+      // Stockage indisponible (navigation privée, quota…) — les réglages
+      // restent actifs pour la session en cours mais ne survivront pas à un
+      // rechargement.
+    }
   })
 
   function setCurrencyCode(value) {

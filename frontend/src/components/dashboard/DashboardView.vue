@@ -324,8 +324,8 @@ const allTimeNetBalance = computed(() => allTimeCreditTotal.value - allTimeDebit
       </article>
     </section>
 
-    <section class="dashboard-current-grid" :class="{ 'dashboard-current-grid-single': isSimplifiedDashboard }">
-      <article v-if="!isSimplifiedDashboard" class="panel stat-card accent-line stat-card-ring">
+    <section v-if="!isSimplifiedDashboard" class="dashboard-current-grid">
+      <article class="panel stat-card accent-line stat-card-ring">
         <CircularProgress
           :percent="budgetUsedPercent"
           :size="76"
@@ -406,10 +406,6 @@ const allTimeNetBalance = computed(() => allTimeCreditTotal.value - allTimeDebit
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
-}
-
-.dashboard-current-grid-single {
-  grid-template-columns: 1fr;
 }
 
 .stat-card-ring {

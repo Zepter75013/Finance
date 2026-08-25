@@ -25,12 +25,11 @@ function openCreateTransfer() {
 
 function mapTransferRow(t) {
   const leg = signTransferLeg(t, store.activeAccountId)
-  const otherAccountName = leg.isOutgoing ? t.toAccountName : t.fromAccountName
 
   return {
     id: t.id,
     date: leg.date,
-    label: `Virement ${leg.isOutgoing ? 'vers' : 'depuis'} ${otherAccountName}`,
+    label: `${t.fromAccountName} → ${t.toAccountName}`,
     sens: leg.isOutgoing ? 'Sortant' : 'Entrant',
     amount: leg.amount,
     raw: t,

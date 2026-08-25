@@ -49,7 +49,7 @@ const incomingTransferItems = computed(() =>
       return {
         id: `transfer-${t.id}`,
         income_date: leg.date,
-        source: `Virement depuis ${t.fromAccountName}`,
+        source: `${t.fromAccountName} → ${t.toAccountName}`,
         category: origin?.category || 'Virement',
         subCategory: '',
         reference: origin?.reference || '',
