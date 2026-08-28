@@ -866,10 +866,18 @@ async function confirmImport() {
           amount: row.amount,
           date: row.date,
           note: row.label,
+          // La référence bancaire brute de la ligne CSV (row.reference)
+          // n'est PAS une référence de relevé — computeRealBalance exclut
+          // du solde réel tout mouvement ayant une from/toStatementReference
+          // non vide (peu importe isReconciled), en supposant qu'il est déjà
+          // compté dans le solde d'un relevé verrouillé. Ne la reporter que
+          // si la ligne est explicitement pointée, sinon un virement importé
+          // (donc jamais rattaché à un relevé) disparaît silencieusement du
+          // solde réel tant qu'aucun relevé n'existe pour sa période.
           fromIsReconciled: isOutgoing ? row.isReconciled : false,
-          fromStatementReference: isOutgoing ? row.reference : '',
+          fromStatementReference: isOutgoing && row.isReconciled ? row.reference : '',
           toIsReconciled: !isOutgoing ? row.isReconciled : false,
-          toStatementReference: !isOutgoing ? row.reference : '',
+          toStatementReference: !isOutgoing && row.isReconciled ? row.reference : '',
         })
       } else if (row.type === 'achat') {
         await store.submitPurchase({

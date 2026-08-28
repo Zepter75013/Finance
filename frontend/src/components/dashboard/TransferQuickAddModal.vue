@@ -41,6 +41,10 @@ function initialForm() {
       amount: props.transfer.amount,
       date: props.transfer.date,
       note: props.transfer.note || '',
+      // Le pointage est propre à chaque côté du virement — on n'expose ici
+      // que celui du compte actif, l'autre compte garde le sien.
+      isReconciled: Boolean(isOutgoing ? props.transfer.fromIsReconciled : props.transfer.toIsReconciled),
+      statementReference: (isOutgoing ? props.transfer.fromStatementReference : props.transfer.toStatementReference) || '',
     }
   }
 
@@ -50,6 +54,8 @@ function initialForm() {
     amount: null,
     date: new Date().toISOString().slice(0, 10),
     note: '',
+    isReconciled: false,
+    statementReference: '',
   }
 }
 
@@ -96,11 +102,19 @@ async function submitForm() {
   const fromAccountId = isCredit ? form.otherAccountId : activeAccountId.value
   const toAccountId = isCredit ? activeAccountId.value : form.otherAccountId
 
+  // Le pointage saisi ici ne porte que sur le côté (source ou destination)
+  // qui concerne le compte actif — l'autre côté garde le sien, indépendant
+  // (voir ReconciliationView.vue, même règle).
+  const statementReference = form.isReconciled ? form.statementReference : ''
+  const reconciliationPatch = isCredit
+    ? { toIsReconciled: form.isReconciled, toStatementReference: statementReference }
+    : { fromIsReconciled: form.isReconciled, fromStatementReference: statementReference }
+
   try {
     if (isEditMode.value) {
-      // Ne garde que from/to/montant/date/note du formulaire — le reste
-      // (pointage, copie d'origine…) vient de props.transfer pour ne pas
-      // l'effacer silencieusement à l'édition.
+      // Ne garde que from/to/montant/date/note/pointage du formulaire — le
+      // reste (copie d'origine, pointage de l'autre côté…) vient de
+      // props.transfer pour ne pas l'effacer silencieusement à l'édition.
       await store.editTransfer(props.transfer.id, {
         ...props.transfer,
         fromAccountId,
@@ -108,9 +122,17 @@ async function submitForm() {
         amount: form.amount,
         date: form.date,
         note: form.note,
+        ...reconciliationPatch,
       })
     } else {
-      await store.createTransfer({ fromAccountId, toAccountId, amount: form.amount, date: form.date, note: form.note })
+      await store.createTransfer({
+        fromAccountId,
+        toAccountId,
+        amount: form.amount,
+        date: form.date,
+        note: form.note,
+        ...reconciliationPatch,
+      })
     }
 
     emit('update:modelValue', false)
@@ -211,6 +233,16 @@ async function confirmUndo() {
         <label class="form-field form-field-full">
           <span>Note</span>
           <textarea v-model.trim="form.note" rows="3" placeholder="Ajouter un commentaire" />
+        </label>
+
+        <label class="form-field form-field-full form-field-checkbox">
+          <input v-model="form.isReconciled" type="checkbox" />
+          <span>Opération pointée</span>
+        </label>
+
+        <label v-if="form.isReconciled" class="form-field form-field-full">
+          <span>Numéro de relevé</span>
+          <input v-model.trim="form.statementReference" type="text" placeholder="Ex: 2026-01" />
         </label>
 
         <p v-if="submitError" class="form-error">{{ submitError }}</p>
